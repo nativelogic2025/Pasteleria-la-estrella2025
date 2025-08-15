@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'carrito.dart'; // Importa la página externa Carrito
+import 'package:provider/provider.dart';
+import 'carrito_provider.dart';
+import 'carrito.dart'; // Tu pantalla Carrito
+import 'producto.dart' as producto;
+
 
 class VentasPasteles extends StatelessWidget {
   const VentasPasteles({super.key});
@@ -49,12 +53,12 @@ class VentasPasteles extends StatelessWidget {
       'Rompope con Nuez': '🥚🌰',
       'Queso con Zarzmora': '🧀🫐',
       'Queso Revuelto': '🧀',
-      'ChocoFresa': '🍓',
-      'ChocoMoka': '☕',
-      'ChocoNuez': '🌰',
+      'ChocoFresa': '🍫🍓',
+      'ChocoMoka': '🍫☕',
+      'ChocoNuez': '🍫🌰',
       'ChocoNutella': '🍫',
       'ChocoOreo': '🍪',
-      'ChocoZarzamora': '🫐',
+      'ChocoZarzamora': '🍫🫐',
     };
 
     final Map<String, double> tamanoEmoji = {
@@ -83,6 +87,7 @@ class VentasPasteles extends StatelessWidget {
 
     double buttonSize = 100;
     double spacing = 30;
+    double precioBase = 50; // Precio fijo por pastel (ajustable)
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -96,10 +101,9 @@ class VentasPasteles extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.shopping_cart),
             onPressed: () {
-              // Navega a la página Carrito
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const Carrito()),
+                MaterialPageRoute(builder: (context) => const CarritoScreen()),
               );
             },
           ),
@@ -131,7 +135,19 @@ class VentasPasteles extends StatelessWidget {
                               width: buttonSize,
                               height: buttonSize,
                               child: OutlinedButton(
-                                onPressed: () {},
+                                onPressed: () {
+                                  Provider.of<CarritoProvider>(context, listen: false)
+                                      .agregarProducto(
+                                    producto.Producto(
+                                      nombre: sabor,
+                                      emoji: emojisPorSabor[sabor] ?? '🎂',
+                                      precio: precioBase,
+                                    ),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('$sabor agregado al carrito')),
+                                  );
+                                },
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: const Color.fromARGB(255, 238, 232, 146),
                                   side: const BorderSide(color: Colors.black, width: 2),
@@ -185,7 +201,19 @@ class VentasPasteles extends StatelessWidget {
                               width: buttonSize,
                               height: buttonSize,
                               child: OutlinedButton(
-                                onPressed: () {},
+                                onPressed: () {
+                                  Provider.of<CarritoProvider>(context, listen: false)
+                                      .agregarProducto(
+                                    producto.Producto(
+                                      nombre: sabor,
+                                      emoji: emojisPorSabor[sabor] ?? '🎂',
+                                      precio: precioBase,
+                                    ),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('$sabor agregado al carrito')),
+                                  );
+                                },
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: const Color.fromARGB(255, 142, 67, 67),
                                   side: const BorderSide(color: Colors.black, width: 2),

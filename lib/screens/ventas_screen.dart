@@ -51,7 +51,8 @@ class VentasScreen extends StatelessWidget {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const Carrito()), // 👈 Navega al carrito
+                MaterialPageRoute(builder: (context) => const CarritoScreen())
+
               );
             },
           ),

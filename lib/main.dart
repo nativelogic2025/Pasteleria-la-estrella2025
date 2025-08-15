@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
-import 'screens/splash_screen.dart'; // Importa la pantalla que acabas de crear
+import 'package:provider/provider.dart';
+import 'screens/splash_screen.dart';
+import 'screens/carrito.dart';
+import 'screens/carrito_provider.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => CarritoProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -13,6 +21,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Pastelería La Estrella',
       home: const SplashScreen(),
+      routes: {
+        '/carrito': (context) => const CarritoScreen(),
+      },
     );
   }
 }
