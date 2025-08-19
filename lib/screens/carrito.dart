@@ -43,9 +43,13 @@ class CarritoScreen extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Row(
                             children: [
-                              Text(
-                                producto.emoji,
-                                style: const TextStyle(fontSize: 30),
+                              Image.asset(
+                                producto.imagen,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(Icons.image_not_supported, size: 40),
                               ),
                               const SizedBox(width: 12),
                               Expanded(

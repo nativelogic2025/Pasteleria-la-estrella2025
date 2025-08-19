@@ -108,7 +108,7 @@ class VentasPasteles extends StatelessWidget {
                             .agregarProducto(
                           producto.Producto(
                             nombre: sabor,
-                            emoji: "🖼️",
+                            imagen: 'assets/images/${_formatearNombre(sabor)}.png',
                             precio: precioBase,
                           ),
                         );
