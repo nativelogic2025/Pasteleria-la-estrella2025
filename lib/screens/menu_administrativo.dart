@@ -26,11 +26,11 @@ class MenuAdministrativo extends StatelessWidget {
     final List<IconData> iconos = [
       Icons.sell,
       Icons.shopping_cart_checkout,
-      Icons.add_shopping_cart,
-      Icons.book,
-      Icons.assignment_turned_in,
+      Icons.store_mall_directory_rounded,
+      Icons.menu_book_sharp,
+      Icons.assignment_outlined,
       Icons.account_balance,
-      Icons.inventory_2,
+      Icons.all_inbox_rounded,
     ];
 
     final List<Widget> pantallas = [
