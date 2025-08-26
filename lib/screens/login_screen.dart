@@ -53,6 +53,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     String? storedHash = await storage.read(key: usuario);
 
+    // 👇 después del await, revisamos si el widget sigue montado
+    if (!mounted) return;
+
     if (storedHash != null && storedHash == passwordHash) {
       // Usuario correcto, navegar según rol
       if (usuario == "admin") {

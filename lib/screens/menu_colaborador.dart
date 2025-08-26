@@ -4,6 +4,7 @@ import 'pedido_screen.dart';
 import 'stock_screen.dart';
 import 'catalogo_screen.dart';
 import 'ver_pedidos_screen.dart';
+import 'login_screen.dart'; // 👈 Importar login
 
 class MenuColaborador extends StatelessWidget {
   const MenuColaborador({super.key});
@@ -35,13 +36,30 @@ class MenuColaborador extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Menú Colaborador')),
+      appBar: AppBar(
+        title: const Text('Menú Colaborador'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Cerrar sesión',
+            onPressed: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           double spacing = 20;
           int filas = 3;
-          double buttonSize = (constraints.maxHeight - (spacing * (filas + 1))) / filas;
-          double maxWidthButton = (constraints.maxWidth - spacing * 2 - 40) / 3;
+          double buttonSize =
+              (constraints.maxHeight - (spacing * (filas + 1))) / filas;
+          double maxWidthButton =
+              (constraints.maxWidth - spacing * 2 - 40) / 3;
           if (buttonSize > maxWidthButton) buttonSize = maxWidthButton;
 
           return Center(
@@ -61,7 +79,8 @@ class MenuColaborador extends StatelessWidget {
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => pantallas[index]),
+                              MaterialPageRoute(
+                                  builder: (context) => pantallas[index]),
                             );
                           },
                           style: OutlinedButton.styleFrom(

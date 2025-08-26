@@ -16,7 +16,7 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
 
     // Simular carga de datos
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 7), () {
       if (!mounted) return; // ✅ Evita usar context si el widget ya no existe
       Navigator.pushReplacement(
         context,
