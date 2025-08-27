@@ -71,7 +71,7 @@ class VentasPostres extends StatelessWidget {
                               producto.Producto(
                                 nombre: postre,
                                 imagen:
-                                    'assets/images/${_formatearNombre(postre)}.png',
+                                    'assets/postres/${_formatearNombre(postre)}.png',
                                 precio: precioBase,
                               ),
                             );
@@ -93,7 +93,7 @@ class VentasPostres extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: Image.asset(
-                              'assets/images/${_formatearNombre(postre)}.png',
+                              'assets/postres/${_formatearNombre(postre)}.png',
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(Icons.image_not_supported,

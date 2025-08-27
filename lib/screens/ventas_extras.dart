@@ -66,7 +66,7 @@ class VentasExtras extends StatelessWidget {
                               producto.Producto(
                                 nombre: nombreProducto,
                                 imagen:
-                                    'assets/images/${_formatearNombre(nombreProducto)}.png',
+                                    'assets/extras/${_formatearNombre(nombreProducto)}.png',
                                 precio: precioBase,
                               ),
                             );
@@ -90,7 +90,7 @@ class VentasExtras extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: Image.asset(
-                              'assets/images/${_formatearNombre(nombreProducto)}.png',
+                              'assets/extras/${_formatearNombre(nombreProducto)}.png',
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(Icons.image_not_supported, size: 50),

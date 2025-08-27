@@ -108,7 +108,7 @@ class VentasPasteles extends StatelessWidget {
                             .agregarProducto(
                           producto.Producto(
                             nombre: sabor,
-                            imagen: 'assets/images/${_formatearNombre(sabor)}.png',
+                            imagen: 'assets/pasteles/${_formatearNombre(sabor)}.png',
                             precio: precioBase,
                           ),
                         );
@@ -127,7 +127,7 @@ class VentasPasteles extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.all(8.0), // Ajusta este valor para cambiar el tamaño de la imagen
                         child: Image.asset(
-                          'assets/images/${_formatearNombre(sabor)}.png',
+                          'assets/pasteles/${_formatearNombre(sabor)}.png',
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) =>
                               const Icon(Icons.image_not_supported, size: 50),

@@ -80,11 +80,18 @@ class VentasVelas extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: Icon(
-                            _getIconForVela(vela),
-                            size: buttonSize / 2,
-                            color: Colors.black,
-                          ),
+                          child: Image.asset(
+                          'assets/velas/${_formatearNombre(vela)}.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            // Si no encuentra la imagen, usa un ícono como fallback
+                            return Icon(
+                              _getIconForVela(vela),
+                              size: buttonSize / 2,
+                              color: Colors.black,
+                            );
+                          },
+                        ),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -109,7 +116,7 @@ class VentasVelas extends StatelessWidget {
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
         nombre: nombre,
-        imagen: 'assets/images/${_formatearNombre(nombre)}.png',
+        imagen: 'assets/velas/${_formatearNombre(nombre)}.png',
         precio: precioBase,
       ),
     );

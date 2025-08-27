@@ -79,7 +79,7 @@ class VentasReposteria extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: Image.asset(
-                              'assets/images/${_formatearNombre(nombre)}.png',
+                              'assets/reposteria/${_formatearNombre(nombre)}.png',
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(Icons.image_not_supported, size: 50),
@@ -125,7 +125,7 @@ static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto)
                   producto.Producto(
                     nombre: "$nombreProducto $tamanio",
                     imagen:
-                        'assets/images/${_formatearNombre(nombreProducto)}.png',
+                        'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
                     precio: precioBase,
                   ),
                 );
@@ -159,7 +159,7 @@ static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto)
                   producto.Producto(
                     nombre: "$nombreProducto $tamanio $tipo",
                     imagen:
-                        'assets/images/${_formatearNombre(nombreProducto)}.png',
+                        'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
                     precio: precioBase,
                   ),
                 );
@@ -199,7 +199,7 @@ static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto)
                     .agregarProducto(
                   producto.Producto(
                     nombre: "Mousse $sabor",
-                    imagen: 'assets/images/mousse.png',
+                    imagen: 'assets/reposteria/mousse.png',
                     precio: precioBase,
                   ),
                 );
