@@ -37,111 +37,104 @@ class VentasReposteria extends StatelessWidget {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          double spacing = 20;
-          int columnas = constraints.maxWidth > 600 ? 3 : 2;
-          double buttonSize =
-              (constraints.maxWidth - (spacing * (columnas + 1))) / columnas;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              alignment: WrapAlignment.center,
-              children: productos.map((nombre) {
-                return SizedBox(
-                  width: buttonSize,
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        width: buttonSize,
-                        height: buttonSize,
-                        child: OutlinedButton(
-                          onPressed: () {
-                            if (nombre == 'Tiramisú' ||
-                                nombre == 'Pastel Imposible') {
-                              _mostrarOpcionesTamanio(context, nombre);
-                            } else if (nombre == 'Mousse') {
-                              _mostrarSaboresMousse(context);
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor:
-                                const Color.fromARGB(255, 245, 225, 184),
-                            side: const BorderSide(color: Colors.black, width: 2),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: EdgeInsets.zero,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Image.asset(
-                              'assets/reposteria/${_formatearNombre(nombre)}.png',
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(Icons.image_not_supported, size: 50),
-                            ),
-                          ),
-                        ),
+      body: Center(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(16),
+          shrinkWrap: true,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, // cantidad de columnas
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            childAspectRatio: 1, // cuadrado
+          ),
+          itemCount: productos.length,
+          itemBuilder: (context, index) {
+            String nombre = productos[index];
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 300, // tamaño fijo
+                  height: 300,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      if (nombre == 'Tiramisú' ||
+                          nombre == 'Pastel Imposible') {
+                        _mostrarOpcionesTamanio(context, nombre);
+                      } else if (nombre == 'Mousse') {
+                        _mostrarSaboresMousse(context);
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor:
+                          const Color.fromARGB(255, 245, 225, 184),
+                      side: const BorderSide(color: Colors.black, width: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        nombre,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold),
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Image.asset(
+                        'assets/reposteria/${_formatearNombre(nombre)}.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.image_not_supported, size: 50),
                       ),
-                    ],
+                    ),
                   ),
-                );
-              }).toList(),
-            ),
-          );
-        },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  nombre,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
   // ---------------- Tiramisú y Pastel Imposible ----------------
-static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto) {
-  showDialog(
-    context: context,
-    builder: (context) {
-      return SimpleDialog(
-        title: Text("Elige el tamaño de $nombreProducto"),
-        children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
-          return SimpleDialogOption(
-            onPressed: () {
-              Navigator.pop(context);
-              if (nombreProducto == 'Pastel Imposible') {
-                _mostrarOpcionesTipo(context, nombreProducto, tamanio);
-              } else {
-                // Para Tiramisú, se agrega directamente
-                Provider.of<CarritoProvider>(context, listen: false)
-                    .agregarProducto(
-                  producto.Producto(
-                    nombre: "$nombreProducto $tamanio",
-                    imagen:
-                        'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
-                    precio: precioBase,
-                  ),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('$nombreProducto $tamanio agregado')),
-                );
-              }
-            },
-            child: Text(tamanio),
-          );
-        }).toList(),
-      );
-    },
-  );
-}
-
+  static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return SimpleDialog(
+          title: Text("Elige el tamaño de $nombreProducto"),
+          children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
+            return SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(context);
+                if (nombreProducto == 'Pastel Imposible') {
+                  _mostrarOpcionesTipo(context, nombreProducto, tamanio);
+                } else {
+                  Provider.of<CarritoProvider>(context, listen: false)
+                      .agregarProducto(
+                    producto.Producto(
+                      nombre: "$nombreProducto $tamanio",
+                      imagen:
+                          'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
+                      precio: precioBase,
+                    ),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$nombreProducto $tamanio agregado')),
+                  );
+                }
+              },
+              child: Text(tamanio),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
 
   static void _mostrarOpcionesTipo(
       BuildContext context, String nombreProducto, String tamanio) {
