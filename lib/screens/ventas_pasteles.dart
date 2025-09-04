@@ -68,13 +68,13 @@ class VentasPasteles extends StatelessWidget {
             // Columna Vainilla
             Expanded(
               child: _buildSaborColumn(context, saboresVainilla, 'Vainilla',
-                  const Color.fromARGB(255, 238, 232, 146)),
+                  const Color.fromARGB(255, 237, 233, 175)),
             ),
             const SizedBox(width: 16),
             // Columna Chocolate
             Expanded(
               child: _buildSaborColumn(context, saboresChocolate, 'Chocolate',
-                  const Color.fromARGB(255, 142, 67, 67)),
+                  const Color.fromARGB(255, 192, 130, 130)),
             ),
           ],
         ),

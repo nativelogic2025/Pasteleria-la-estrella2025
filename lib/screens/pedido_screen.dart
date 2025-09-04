@@ -134,7 +134,6 @@ class _PedidoScreenState extends State<PedidoScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             child: Theme(
               data: Theme.of(context).copyWith(
-                useMaterial3: true,
                 dividerTheme: divider,
                 inputDecorationTheme: InputDecorationTheme(
                   isDense: true,
