@@ -30,11 +30,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_secure_storage: ^9.2.2
+  local_auth: ^2.3.0
+  file_picker: ^8.0.0
+  shared_preferences: ^2.2.3
   provider: ^6.0.6
   font_awesome_flutter: ^10.4.0
   cupertino_icons: ^1.0.8
   flutter_secure_storage: ^9.2.4
   crypto: ^3.0.6
+  pdf: ^3.11.3        # 👈 aquí, versión válida
+  printing: ^5.14.2   # opcional
+  pocketbase: ^0.23.0+1
+  http: ^1.1.0
+
 
 
 dev_dependencies:
@@ -46,7 +55,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
