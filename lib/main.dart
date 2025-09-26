@@ -5,16 +5,16 @@ import 'screens/splash_screen.dart';
 import 'screens/carrito.dart';
 import 'screens/carrito_provider.dart';
 
-// 👇 Agrega estos dos si seguiste mi ejemplo de Stock
-import 'screens/stock_screen.dart';
-import 'screens/stock_provider.dart';
+// 👇 ahora StockScreen sigue en screens/
+// pero StockProvider está en providers/
+
 
 void main() {
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => CarritoProvider()),
-        ChangeNotifierProvider(create: (_) => StockProvider()), // 👈 nuevo
+
       ],
       child: const MyApp(),
     ),
@@ -27,13 +27,16 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false, // quita la cinta de debug
       title: 'Pastelería La Estrella',
-      // Opcional: tema Material 3
-      // theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.pink),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.pink,
+      ),
       home: const SplashScreen(),
       routes: {
         '/carrito': (context) => const CarritoScreen(),
-        '/stock':  (context) => const StockScreen(), // 👈 acceso directo al inventario
+
       },
     );
   }

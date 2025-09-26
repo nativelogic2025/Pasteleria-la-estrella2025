@@ -1,20 +1,101 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pocketbase/pocketbase.dart';
+
 import 'carrito_provider.dart';
 import 'carrito.dart';
 import 'producto.dart' as producto;
 
-class VentasReposteria extends StatelessWidget {
+class VentasReposteria extends StatefulWidget {
   const VentasReposteria({super.key});
 
-  static const List<String> productos = [
-    'Tiramisú',
-    'Pastel Imposible',
-    'Mousse',
-  ];
+  @override
+  State<VentasReposteria> createState() => _VentasReposteriaState();
+}
 
-  static const double precioBase = 50; // Precio base, ajusta según necesites
+class _VentasReposteriaState extends State<VentasReposteria> {
+  final pb = PocketBase('http://127.0.0.1:8090'); // 🔧 tu servidor PB
 
+  List<RecordModel> _items = [];
+  bool _loading = true;
+  UnsubscribeFunc? _unsub;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+    _suscribirRealtime(); // 👈 sin warnings
+  }
+
+  Future<void> _suscribirRealtime() async {
+    try {
+      final fn = await pb.collection('productos').subscribe('*', (e) {
+        if (!mounted) return;
+        _cargar();
+      });
+      _unsub = fn;
+    } catch (e) {
+      // No pasa nada si falla la suscripción; solo registramos el error.
+      debugPrint('No se pudo suscribir a realtime: $e');
+      _unsub = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    try {
+      _unsub?.call();
+    } catch (_) {}
+    _unsub = null;
+    super.dispose();
+  }
+
+  // ---------- Lectura de campos ----------
+  String _nombre(RecordModel r) =>
+      (r.data['Nombre'] ?? r.data['producto'] ?? '').toString();
+
+  double _precio(RecordModel r) {
+    final v = r.data['precio'];
+    if (v is num) return v.toDouble();
+    return double.tryParse(v?.toString() ?? '0') ?? 0.0;
+    }
+
+  int _stock(RecordModel r) {
+    final v = r.data['cantidad'];
+    if (v is int) return v;
+    return int.tryParse(v?.toString() ?? '0') ?? 0;
+  }
+
+  String? _iconUrl(RecordModel r, {String size = '300x300'}) {
+    final file = r.data['icon'];
+    if (file == null || file.toString().isEmpty) return null;
+    return pb.files.getUrl(r, file.toString(), thumb: size).toString();
+  }
+
+  // ---------- Data (PB) ----------
+  Future<void> _cargar() async {
+    setState(() => _loading = true);
+    try {
+      final res = await pb.collection('productos').getList(
+            perPage: 200,
+            filter: 'Categoria = "Reposteria"',
+            sort: 'Nombre',
+          );
+      if (!mounted) return;
+      setState(() {
+        _items = res.items;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar Repostería: $e')),
+      );
+    }
+  }
+
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -26,198 +107,232 @@ class VentasReposteria extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _cargar),
           IconButton(
             icon: const Icon(Icons.shopping_cart),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const CarritoScreen()),
+                MaterialPageRoute(builder: (_) => const CarritoScreen()),
               );
             },
           ),
         ],
       ),
-      body: Center(
-        child: GridView.builder(
-          padding: const EdgeInsets.all(16),
-          shrinkWrap: true,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, // cantidad de columnas
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            childAspectRatio: 1, // cuadrado
-          ),
-          itemCount: productos.length,
-          itemBuilder: (context, index) {
-            String nombre = productos[index];
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 300, // tamaño fijo
-                  height: 300,
-                  child: OutlinedButton(
-                    onPressed: () {
-                      if (nombre == 'Tiramisú' ||
-                          nombre == 'Pastel Imposible') {
-                        _mostrarOpcionesTamanio(context, nombre);
-                      } else if (nombre == 'Mousse') {
-                        _mostrarSaboresMousse(context);
-                      }
-                    },
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor:
-                          const Color.fromARGB(255, 245, 225, 184),
-                      side: const BorderSide(color: Colors.black, width: 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: EdgeInsets.zero,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                // Solo mostrables: stock > 0
+                final visibles = _items.where((r) => _stock(r) > 0).toList();
+
+                if (visibles.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No hay productos disponibles en Repostería',
+                      style: TextStyle(fontSize: 16),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Image.asset(
-                        'assets/reposteria/${_formatearNombre(nombre)}.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.image_not_supported, size: 50),
-                      ),
-                    ),
+                  );
+                }
+
+                // === Cálculo "como tu VentasPostres" ===
+                final double spacing = 20;
+                final int columnas = constraints.maxWidth > 600 ? 5 : 2;
+                final double buttonSize =
+                    (constraints.maxWidth - (spacing * (columnas + 1))) /
+                        columnas;
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    alignment: WrapAlignment.center,
+                    children: visibles.map((r) {
+                      final nombre = _nombre(r);
+                      final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
+                      final stock = _stock(r);
+                      final url = _iconUrl(r);
+                      final assetFallback =
+                          'assets/reposteria/${_slug(nombre)}.png';
+
+                      return SizedBox(
+                        width: buttonSize,
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: buttonSize,
+                              height: buttonSize,
+                              child: OutlinedButton(
+                                onPressed: () => _onTapProducto(context, r),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: const Color.fromARGB(
+                                      255, 245, 225, 184),
+                                  side: const BorderSide(
+                                      color: Colors.black, width: 2),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: (url != null && url.isNotEmpty)
+                                      ? Image.network(
+                                          url,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                                Icons.image_not_supported,
+                                                size: 50,
+                                              ),
+                                        )
+                                      : Image.asset(
+                                          assetFallback,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                                Icons.image_not_supported,
+                                                size: 50,
+                                              ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              nombre,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Stock: $stock   ·   \$${precio.toStringAsFixed(2)}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  nombre,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ],
-            );
-          },
-        ),
+                );
+              },
+            ),
+    );
+  }
+
+  // ---------- Taps + reglas especiales ----------
+  void _onTapProducto(BuildContext context, RecordModel r) {
+    final nombre = _nombre(r);
+    final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
+
+    if (nombre == 'Tiramisú' || nombre == 'Pastel Imposible') {
+      _mostrarOpcionesTamanio(context, r, precio);
+      return;
+    }
+    if (nombre == 'Mousse') {
+      _mostrarSaboresMousse(context, r, precio);
+      return;
+    }
+    _agregarAlCarrito(context, r, nombre, precio);
+  }
+
+  void _mostrarOpcionesTamanio(
+      BuildContext context, RecordModel r, double precioBase) {
+    final nombre = _nombre(r);
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: Text('Elige el tamaño de $nombre'),
+        children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              if (nombre == 'Pastel Imposible') {
+                _mostrarOpcionesTipo(context, r, precioBase, tamanio);
+              } else {
+                _agregarAlCarrito(context, r, '$nombre $tamanio', precioBase);
+              }
+            },
+            child: Text(tamanio),
+          );
+        }).toList(),
       ),
     );
   }
 
-  // ---------------- Tiramisú y Pastel Imposible ----------------
-  static void _mostrarOpcionesTamanio(BuildContext context, String nombreProducto) {
+  void _mostrarOpcionesTipo(
+      BuildContext context, RecordModel r, double precioBase, String tamanio) {
+    final nombre = _nombre(r);
     showDialog(
       context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: Text("Elige el tamaño de $nombreProducto"),
-          children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
-            return SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(context);
-                if (nombreProducto == 'Pastel Imposible') {
-                  _mostrarOpcionesTipo(context, nombreProducto, tamanio);
-                } else {
-                  Provider.of<CarritoProvider>(context, listen: false)
-                      .agregarProducto(
-                    producto.Producto(
-                      nombre: "$nombreProducto $tamanio",
-                      imagen:
-                          'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
-                      precio: precioBase,
-                    ),
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$nombreProducto $tamanio agregado')),
-                  );
-                }
-              },
-              child: Text(tamanio),
-            );
-          }).toList(),
-        );
-      },
+      builder: (_) => SimpleDialog(
+        title: const Text('Selecciona tipo'),
+        children: ['Normal', 'Café'].map((tipo) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              _agregarAlCarrito(context, r, '$nombre $tamanio $tipo', precioBase);
+            },
+            child: Text(tipo),
+          );
+        }).toList(),
+      ),
     );
   }
 
-  static void _mostrarOpcionesTipo(
-      BuildContext context, String nombreProducto, String tamanio) {
+  void _mostrarSaboresMousse(
+      BuildContext context, RecordModel r, double precioBase) {
+    final sabores = ['Zarzamora', 'Fresa', 'Oreo', 'Guayaba', 'PiñaCoco', 'Mango'];
     showDialog(
       context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: const Text("Selecciona tipo"),
-          children: ['Normal', 'Café'].map((tipo) {
-            return SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(context);
-                Provider.of<CarritoProvider>(context, listen: false)
-                    .agregarProducto(
-                  producto.Producto(
-                    nombre: "$nombreProducto $tamanio $tipo",
-                    imagen:
-                        'assets/reposteria/${_formatearNombre(nombreProducto)}.png',
-                    precio: precioBase,
-                  ),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('$nombreProducto $tamanio $tipo agregado')),
-                );
-              },
-              child: Text(tipo),
-            );
-          }).toList(),
-        );
-      },
+      builder: (_) => SimpleDialog(
+        title: const Text('Elige el sabor del Mousse'),
+        children: sabores.map((sabor) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              _agregarAlCarrito(context, r, 'Mousse $sabor', precioBase);
+            },
+            child: Text(sabor),
+          );
+        }).toList(),
+      ),
     );
   }
 
-  // ---------------- Mousse ----------------
-  static void _mostrarSaboresMousse(BuildContext context) {
-    List<String> sabores = [
-      'Zarzamora',
-      'Fresa',
-      'Oreo',
-      'Guayaba',
-      'PiñaCoco',
-      'Mango'
-    ];
+  // ---------- Agregar al carrito ----------
+  void _agregarAlCarrito(
+      BuildContext context, RecordModel r, String nombreMostrar, double precio) {
+    final imgUrl = _iconUrl(r);
+    final nombreBase = _nombre(r);
+    final assetFallback = 'assets/reposteria/${_slug(nombreBase)}.png';
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: const Text("Elige el sabor del Mousse"),
-          children: sabores.map((sabor) {
-            return SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(context);
-                Provider.of<CarritoProvider>(context, listen: false)
-                    .agregarProducto(
-                  producto.Producto(
-                    nombre: "Mousse $sabor",
-                    imagen: 'assets/reposteria/mousse.png',
-                    precio: precioBase,
-                  ),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Mousse $sabor agregado')),
-                );
-              },
-              child: Text(sabor),
-            );
-          }).toList(),
-        );
-      },
+    Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
+      producto.Producto(
+        nombre: nombreMostrar,
+        imagen: (imgUrl != null && imgUrl.isNotEmpty) ? imgUrl : assetFallback,
+        precio: precio,
+      ),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$nombreMostrar agregado')),
     );
   }
 
-  // ---------------- Formateador de nombres para imágenes ----------------
-  static String _formatearNombre(String nombre) {
-    return nombre
-        .toLowerCase()
-        .replaceAll(" ", "_")
-        .replaceAll("á", "a")
-        .replaceAll("é", "e")
-        .replaceAll("í", "i")
-        .replaceAll("ó", "o")
-        .replaceAll("ú", "u")
-        .replaceAll("ñ", "n");
+  // ---------- Utils ----------
+  static String _slug(String s) {
+    s = s.trim().toLowerCase();
+    const from = 'áéíóúüñ';
+    const to =   'aeiouun';
+    for (int i = 0; i < from.length; i++) {
+      s = s.replaceAll(from[i], to[i]);
+    }
+    return s.replaceAll(' ', '_');
   }
 }

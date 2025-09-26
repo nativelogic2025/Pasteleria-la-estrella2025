@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
-
+import 'auth_service.dart';
 import 'menu_administrativo.dart';
 import 'menu_colaborador.dart';
 
@@ -14,72 +11,65 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _usuarioController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final storage = const FlutterSecureStorage();
+  final _formKey = GlobalKey<FormState>();
 
   bool _isPasswordVisible = false;
+  bool _loading = false;
+  String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    _guardarUsuarios();
-  }
+  Future<void> _doLogin() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-  Future<void> _guardarUsuarios() async {
-    final adminPass = _hashPassword("1999");
-    final colabPass = _hashPassword("2025");
+    try {
+      final auth = AuthService();
+      await auth.loginUser(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
 
-    String? adminGuardado = await storage.read(key: 'admin');
-    if (adminGuardado == null) {
-      await storage.write(key: 'admin', value: adminPass);
-    }
+      if (!mounted) return;
 
-    String? colabGuardado = await storage.read(key: 'colaborador');
-    if (colabGuardado == null) {
-      await storage.write(key: 'colaborador', value: colabPass);
-    }
-  }
+      final role = auth.currentRole?.toLowerCase();
 
-  Future<void> _login() async {
-    final usuario = _usuarioController.text.trim().toLowerCase();
-    final passwordHash = _hashPassword(_passwordController.text);
-
-    String? storedHash = await storage.read(key: usuario);
-
-    // 👇 después del await, revisamos si el widget sigue montado
-    if (!mounted) return;
-
-    if (storedHash != null && storedHash == passwordHash) {
-      // Usuario correcto, navegar según rol
-      if (usuario == "admin") {
+      if (role == 'admin') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const MenuAdministrativo()),
+          MaterialPageRoute(builder: (_) => const MenuAdministrativo()),
         );
-      } else if (usuario == "colaborador") {
+      } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const MenuColaborador()),
+          MaterialPageRoute(builder: (_) => const MenuColaborador()),
         );
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Usuario o contraseña incorrectos")),
-      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'No se pudo iniciar sesión. Revisa tus credenciales o el servidor.\n$e';
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Fondo blanco agregado
+      backgroundColor: Colors.white,
       body: Row(
         children: [
           Expanded(
@@ -95,63 +85,92 @@ class _LoginScreenState extends State<LoginScreen> {
             flex: 1,
             child: Padding(
               padding: const EdgeInsets.all(40.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Login",
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 30),
-                  const Text("Usuario"),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _usuarioController,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Ingrese su usuario',
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Login",
+                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text("Contraseña"),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: !_isPasswordVisible,
-                    decoration: InputDecoration(
-                      border: const OutlineInputBorder(),
-                      hintText: 'Ingrese su contraseña',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _isPasswordVisible
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                    const SizedBox(height: 30),
+
+                    const Text("Correo"),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: 'correo@dominio.com',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'Ingresa tu correo';
+                        if (!v.contains('@')) return 'Correo inválido';
+                        return null;
+                      },
+                      onFieldSubmitted: (_) => _doLogin(),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    const Text("Contraseña"),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: !_isPasswordVisible,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        hintText: 'Ingresa tu contraseña',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() => _isPasswordVisible = !_isPasswordVisible);
+                          },
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _isPasswordVisible = !_isPasswordVisible;
-                          });
-                        },
+                      ),
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Ingresa tu contraseña' : null,
+                      onFieldSubmitted: (_) => _doLogin(),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _loading ? null : _doLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color.fromARGB(255, 106, 224, 143),
+                        ),
+                        child: _loading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text(
+                                "Iniciar sesión",
+                                style: TextStyle(fontSize: 18),
+                              ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color.fromARGB(255, 106, 224, 143),
-                      ),
-                      child: const Text(
-                        "Iniciar sesión",
-                        style: TextStyle(fontSize: 18),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

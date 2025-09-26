@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'ventas_screen.dart';
 import 'pedido_screen.dart';
-import 'stock_screen.dart';
 import 'catalogo_screen.dart';
 import 'ver_pedidos_screen.dart';
 import 'login_screen.dart'; // 👈 Importar login
@@ -30,7 +29,6 @@ class MenuColaborador extends StatelessWidget {
     final List<Widget> pantallas = [
       const VentasScreen(),
       const PedidoScreen(),
-      const StockScreen(),
       const CatalogoScreen(),
       const VerPedidosScreen(),
     ];
