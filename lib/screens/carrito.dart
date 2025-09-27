@@ -43,14 +43,27 @@ class CarritoScreen extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Row(
                             children: [
-                              Image.asset(
-                                producto.imagen,
+                              // --- INICIO DE LA CORRECCIÓN ---
+                              SizedBox(
                                 width: 50,
                                 height: 50,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(Icons.image_not_supported, size: 40),
+                                child: (producto.imagen.startsWith('http'))
+                                    // Si es una URL, usa Image.network
+                                    ? Image.network(
+                                        producto.imagen,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const Icon(Icons.image_not_supported, size: 40),
+                                      )
+                                    // Si no, es local, usa Image.asset
+                                    : Image.asset(
+                                        producto.imagen,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const Icon(Icons.image_not_supported, size: 40),
+                                      ),
                               ),
+                              // --- FIN DE LA CORRECCIÓN ---
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
