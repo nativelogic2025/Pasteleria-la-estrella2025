@@ -65,6 +65,17 @@ class _StockScreenState extends State<StockScreen>
     final uri = pb.files.getUrl(r, file.toString(), thumb: '100x100');
     return uri.toString();
   }
+  
+  // Muestra un SnackBar de error genérico
+  void _mostrarError(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
 
   // ---------- Data (PB) ----------
   Future<void> _cargar({String? categoria}) async {
@@ -75,16 +86,15 @@ class _StockScreenState extends State<StockScreen>
             filter: categoria == null ? null : 'Categoria = "$categoria"',
             sort: 'Nombre', // orden alfabético dentro de la categoría
           );
-      setState(() {
-        _items = res.items;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _items = res.items;
+          _loading = false;
+        });
+      }
     } catch (e) {
       setState(() => _loading = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar: $e')),
-      );
+      _mostrarError('Error al cargar productos: $e');
     }
   }
 
@@ -92,25 +102,48 @@ class _StockScreenState extends State<StockScreen>
     final sel = _tabsLabels[_tabController.index];
     _cargar(categoria: sel == 'Todos' ? null : sel);
   }
-
+  
+  // ✅ VERSIÓN ROBUSTA
   Future<void> _incrementar(RecordModel r) async {
-    await pb.collection('productos').update(r.id, body: {
-      'cantidad': _cantidad(r) + 1,
-    });
-    _recargarSegunTab();
+    final nuevaCantidad = _cantidad(r) + 1;
+    try {
+      await pb.collection('productos').update(r.id, body: {
+        'cantidad': nuevaCantidad,
+      });
+      if (mounted) {
+        setState(() => r.data['cantidad'] = nuevaCantidad);
+      }
+    } catch (e) {
+      _mostrarError('Error al incrementar: $e');
+    }
   }
 
+  // ✅ VERSIÓN ROBUSTA
   Future<void> _decrementar(RecordModel r) async {
-    final nueva = (_cantidad(r) - 1).clamp(0, 1 << 31);
-    await pb.collection('productos').update(r.id, body: {'cantidad': nueva});
-    _recargarSegunTab();
+    final nuevaCantidad = (_cantidad(r) - 1).clamp(0, 1 << 31);
+    try {
+      await pb.collection('productos').update(r.id, body: {'cantidad': nuevaCantidad});
+      if (mounted) {
+        setState(() => r.data['cantidad'] = nuevaCantidad);
+      }
+    } catch (e) {
+      _mostrarError('Error al decrementar: $e');
+    }
   }
 
+  // ✅ VERSIÓN ROBUSTA
   Future<void> _actualizarPrecio(RecordModel r, double nuevo) async {
-    await pb.collection('productos').update(r.id, body: {'precio': nuevo});
-    _recargarSegunTab();
+    try {
+      await pb.collection('productos').update(r.id, body: {'precio': nuevo});
+      if (mounted) {
+        setState(() => r.data['precio'] = nuevo);
+      }
+    } catch (e) {
+      _mostrarError('Error al actualizar precio: $e');
+    }
   }
 
+  // ✅ VERSIÓN ROBUSTA
   Future<void> _eliminar(RecordModel r) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -124,8 +157,15 @@ class _StockScreenState extends State<StockScreen>
       ),
     );
     if (ok != true) return;
-    await pb.collection('productos').delete(r.id);
-    _recargarSegunTab();
+
+    try {
+      await pb.collection('productos').delete(r.id);
+      if (mounted) {
+        setState(() => _items.removeWhere((item) => item.id == r.id));
+      }
+    } catch (e) {
+      _mostrarError('Error al eliminar: $e');
+    }
   }
 
   Future<double?> _pedirNuevoPrecio(BuildContext context, double actual) async {
