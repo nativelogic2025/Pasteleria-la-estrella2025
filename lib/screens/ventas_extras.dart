@@ -154,7 +154,7 @@ class VentasExtras extends StatefulWidget {
                       final stock = _stock(r);
                       final url = _iconUrl(r);
                       final assetFallback =
-                          'assets/reposteria/${_slug(nombre)}.png';
+                          'assets/extras/${_slug(nombre)}.png';
 
                       return SizedBox(
                         width: buttonSize,
@@ -238,7 +238,7 @@ class VentasExtras extends StatefulWidget {
       BuildContext context, RecordModel r, String nombreMostrar, double precio) {
     final imgUrl = _iconUrl(r);
     final nombreBase = _nombre(r);
-    final assetFallback = 'assets/reposteria/${_slug(nombreBase)}.png';
+    final assetFallback = 'assets/extras/${_slug(nombreBase)}.png';
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
@@ -254,18 +254,6 @@ class VentasExtras extends StatefulWidget {
   }
 
   // ---------------- Formateador de nombres para imágenes ----------------
-  static String _formatearNombre(String nombre) {
-    return nombre
-        .toLowerCase()
-        .replaceAll(" ", "_")
-        .replaceAll("á", "a")
-        .replaceAll("é", "e")
-        .replaceAll("í", "i")
-        .replaceAll("ó", "o")
-        .replaceAll("ú", "u")
-        .replaceAll("ñ", "n");
-  }
-
   // ---------- Utils ----------
   static String _slug(String s) {
     s = s.trim().toLowerCase();
