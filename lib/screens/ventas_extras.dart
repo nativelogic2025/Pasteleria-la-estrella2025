@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pocketbase/pocketbase.dart';
+import 'pb_client.dart';
+
+// ✨ 1. IMPORTA el nuevo notificador
+import '../product_notifier.dart';
 
 import 'carrito_provider.dart';
 import 'carrito.dart';
@@ -14,39 +18,41 @@ class VentasExtras extends StatefulWidget {
 }
 
   class _VentasExtrasState extends State<VentasExtras> {
-  final pb = PocketBase('http://127.0.0.1:8090'); // 🔧 tu servidor PB
-
   List<RecordModel> _items = [];
   bool _loading = true;
-  UnsubscribeFunc? _unsub;
+  // ✨ 2. ELIMINA la variable _unsub
+  // UnsubscribeFunc? _unsub;
 
   @override
   void initState() {
     super.initState();
     _cargar();
-    _suscribirRealtime(); // 👈 sin warnings
+
+    // ✨ 3. REEMPLAZA la suscripción con un listener al notificador
+    Provider.of<ProductNotifier>(context, listen: false)
+        .addListener(_onProductsChanged);
   }
 
+  // ✨ 4. ELIMINA la función _suscribirRealtime() por completo
+  /*
   Future<void> _suscribirRealtime() async {
-    try {
-      final fn = await pb.collection('productos').subscribe('*', (e) {
-        if (!mounted) return;
-        _cargar();
-      });
-      _unsub = fn;
-    } catch (e) {
-      // No pasa nada si falla la suscripción; solo registramos el error.
-      debugPrint('No se pudo suscribir a realtime: $e');
-      _unsub = null;
+    // ... TODO ESTO SE VA ...
+  }
+  */
+
+  // ✨ 5. AÑADE esta función que será llamada por el notificador
+  void _onProductsChanged() {
+    print(">>> Notificación recibida en VentasExtras: Recargando productos...");
+    if (mounted) {
+      _cargar();
     }
   }
 
   @override
   void dispose() {
-    try {
-      _unsub?.call();
-    } catch (_) {}
-    _unsub = null;
+    // ✨ 6. REEMPLAZA el unsubscribe con la eliminación del listener
+    Provider.of<ProductNotifier>(context, listen: false)
+        .removeListener(_onProductsChanged);
     super.dispose();
   }
 
@@ -73,14 +79,21 @@ class VentasExtras extends StatefulWidget {
   }
 
   // ---------- Data (PB) ----------
+  // (La función _cargar ya estaba correcta, se queda igual)
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() => _loading = true);
+
     try {
+      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Extras"');
+      final categoriaExtrasId = categoriaRecord.id;
+
       final res = await pb.collection('productos').getList(
             perPage: 200,
-            filter: 'Categoria = "Extras"',
+            filter: 'Categoria = "$categoriaExtrasId"',
             sort: 'Nombre',
           );
+          
       if (!mounted) return;
       setState(() {
         _items = res.items;
@@ -88,7 +101,10 @@ class VentasExtras extends StatefulWidget {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _items = [];
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al cargar Extras: $e')),
       );
@@ -123,7 +139,6 @@ class VentasExtras extends StatefulWidget {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                // Solo mostrables: stock > 0
                 final visibles = _items.where((r) => _stock(r) > 0).toList();
 
                 if (visibles.isEmpty) {
@@ -135,7 +150,6 @@ class VentasExtras extends StatefulWidget {
                   );
                 }
 
-                // === Cálculo "como tu VentasPostres" ===
                 final double spacing = 20;
                 final int columnas = constraints.maxWidth > 600 ? 5 : 2;
                 final double buttonSize =

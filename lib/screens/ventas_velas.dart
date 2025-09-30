@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:pocketbase/pocketbase.dart';
-
 import 'carrito_provider.dart';
 import 'carrito.dart';
 import 'producto.dart' as producto;
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:pocketbase/pocketbase.dart';
+import 'pb_client.dart';
+
+// ✨ 1. IMPORTA el nuevo notificador
+import '../product_notifier.dart';
 
 class VentasVelas extends StatefulWidget {
   const VentasVelas({super.key});
@@ -14,38 +17,41 @@ class VentasVelas extends StatefulWidget {
 }
 
 class _VentasVelasState extends State<VentasVelas> {
-  final pb = PocketBase('http://127.0.0.1:8090'); // 🔧 tu servidor PB
-
   List<RecordModel> _items = [];
   bool _loading = true;
-  UnsubscribeFunc? _unsub;
+  // ✨ 2. ELIMINA la variable _unsub
+  // UnsubscribeFunc? _unsub;
 
   @override
   void initState() {
     super.initState();
     _cargar();
-    _suscribirRealtime();
+    
+    // ✨ 3. REEMPLAZA la suscripción con un listener al notificador
+    Provider.of<ProductNotifier>(context, listen: false)
+        .addListener(_onProductsChanged);
   }
 
+  // ✨ 4. ELIMINA la función _suscribirRealtime() por completo
+  /*
   Future<void> _suscribirRealtime() async {
-    try {
-      final fn = await pb.collection('productos').subscribe('*', (e) {
-        if (!mounted) return;
-        _cargar();
-      });
-      _unsub = fn;
-    } catch (e) {
-      debugPrint('No se pudo suscribir a realtime: $e');
-      _unsub = null;
+    // ... TODO ESTO SE VA ...
+  }
+  */
+
+  // ✨ 5. AÑADE esta función que será llamada por el notificador
+  void _onProductsChanged() {
+    print(">>> Notificación recibida en VentasVelas: Recargando productos...");
+    if (mounted) {
+      _cargar();
     }
   }
 
   @override
   void dispose() {
-    try {
-      _unsub?.call();
-    } catch (_) {}
-    _unsub = null;
+    // ✨ 6. REEMPLAZA el unsubscribe con la eliminación del listener
+    Provider.of<ProductNotifier>(context, listen: false)
+        .removeListener(_onProductsChanged);
     super.dispose();
   }
 
@@ -72,14 +78,21 @@ class _VentasVelasState extends State<VentasVelas> {
   }
 
   // ---------- Data (PB) ----------
+  // (La función _cargar ya estaba correcta, se queda igual)
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() => _loading = true);
+
     try {
+      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Velas"');
+      final categoriaVelasId = categoriaRecord.id;
+
       final res = await pb.collection('productos').getList(
         perPage: 200,
-        filter: 'Categoria = "Velas"',
+        filter: 'Categoria = "$categoriaVelasId"',
         sort: 'Nombre',
       );
+
       if (!mounted) return;
       setState(() {
         _items = res.items;
@@ -87,7 +100,10 @@ class _VentasVelasState extends State<VentasVelas> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _items = [];
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al cargar Velas: $e')),
       );
@@ -97,6 +113,7 @@ class _VentasVelasState extends State<VentasVelas> {
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
+    // ... (El resto de tu código de UI no necesita cambios)
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -122,15 +139,10 @@ class _VentasVelasState extends State<VentasVelas> {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                // --- INICIO DE LA LÓGICA DE AGRUPAMIENTO ---
                 final Map<String, RecordModel> itemsAgrupados = {};
-
                 for (final item in _items) {
-                  // Solo consideramos agrupar si el item tiene stock
                   if (_stock(item) > 0) {
                     final nombreBase = _obtenerNombreBase(_nombre(item));
-                    // Si el grupo aún no ha sido agregado, lo añadimos.
-                    // Usamos el primer item que encontramos como "representante" del grupo.
                     if (!itemsAgrupados.containsKey(nombreBase)) {
                       itemsAgrupados[nombreBase] = item;
                     }
@@ -138,7 +150,6 @@ class _VentasVelasState extends State<VentasVelas> {
                 }
                 
                 final visibles = itemsAgrupados.values.toList();
-                // --- FIN DE LA LÓGICA DE AGRUPAMIENTO ---
 
                 if (visibles.isEmpty) {
                   return const Center(
@@ -162,7 +173,6 @@ class _VentasVelasState extends State<VentasVelas> {
                     runSpacing: spacing,
                     alignment: WrapAlignment.center,
                     children: visibles.map((r) {
-                      // Usamos el nombre base para el slug de la imagen de respaldo
                       final nombreBase = _obtenerNombreBase(_nombre(r));
                       final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
                       final url = _iconUrl(r);
@@ -214,7 +224,6 @@ class _VentasVelasState extends State<VentasVelas> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              // Mostramos el nombre base en la UI
                               nombreBase,
                               textAlign: TextAlign.center,
                               maxLines: 2,
@@ -224,7 +233,6 @@ class _VentasVelasState extends State<VentasVelas> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              // Ya no mostramos el stock aquí, es irrelevante
                               '\$${precio.toStringAsFixed(2)}',
                               textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 11),
@@ -252,12 +260,10 @@ class _VentasVelasState extends State<VentasVelas> {
     }
   }
 
-  // --- FUNCIÓN MODIFICADA ---
   void _mostrarDialogoNumeros(BuildContext context, RecordModel r) {
     final velaBase = _obtenerNombreBase(_nombre(r));
     final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
 
-    // 1. Encontrar todos los números disponibles para este grupo de velas
     final List<int> numerosDisponibles = [];
     for (final item in _items) {
       if (_obtenerNombreBase(_nombre(item)) == velaBase && _stock(item) > 0) {
@@ -267,7 +273,7 @@ class _VentasVelasState extends State<VentasVelas> {
         }
       }
     }
-    numerosDisponibles.sort(); // Opcional: para que los números aparezcan en orden
+    numerosDisponibles.sort();
 
     showDialog(
       context: context,
@@ -331,7 +337,6 @@ class _VentasVelasState extends State<VentasVelas> {
     return nombreCompleto.replaceAll(regex, 'No. ').trim();
   }
   
-  // NUEVA FUNCIÓN para extraer el número de un nombre
   int? _extraerNumero(String nombreCompleto) {
     final match = RegExp(r'No\.\s*(\d+)').firstMatch(nombreCompleto);
     if (match != null) {
@@ -342,7 +347,7 @@ class _VentasVelasState extends State<VentasVelas> {
 
   static String _slug(String s) {
     s = s.trim().toLowerCase();
-    s = s.replaceAll(RegExp(r'no\.\s*'), ''); // Quitar "no. " para el slug
+    s = s.replaceAll(RegExp(r'no\.\s*'), '');
     const from = 'áéíóúüñ';
     const to =   'aeiouun';
     for (int i = 0; i < from.length; i++) {

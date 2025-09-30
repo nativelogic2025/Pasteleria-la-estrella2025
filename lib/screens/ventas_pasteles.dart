@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pocketbase/pocketbase.dart';
+import 'pb_client.dart';
+
+// ✨ 1. IMPORTA el nuevo notificador
+import '../product_notifier.dart';
 
 import 'carrito_provider.dart';
 import 'carrito.dart';
@@ -14,39 +18,41 @@ class VentasPasteles extends StatefulWidget {
 }
 
 class _VentasPastelesState extends State<VentasPasteles> {
-  // 🔧 Ajusta a tu servidor PB (10.0.2.2 para Android emulador si PB corre en tu PC)
-  final pb = PocketBase('http://127.0.0.1:8090');
-
   List<RecordModel> _items = [];
   bool _loading = true;
-  UnsubscribeFunc? _unsub;
+  // ✨ 2. ELIMINA la variable _unsub
+  // UnsubscribeFunc? _unsub;
 
   @override
   void initState() {
     super.initState();
     _cargar();
-    _suscribirRealtime();
+    
+    // ✨ 3. REEMPLAZA la suscripción con un listener al notificador
+    Provider.of<ProductNotifier>(context, listen: false)
+        .addListener(_onProductsChanged);
   }
 
+  // ✨ 4. ELIMINA la función _suscribirRealtime() por completo
+  /*
   Future<void> _suscribirRealtime() async {
-    try {
-      final fn = await pb.collection('productos').subscribe('*', (e) {
-        if (!mounted) return;
-        _cargar();
-      });
-      _unsub = fn;
-    } catch (e) {
-      debugPrint('No se pudo suscribir a realtime: $e');
-      _unsub = null;
+    // ... TODO ESTO SE VA ...
+  }
+  */
+
+  // ✨ 5. AÑADE esta función que será llamada por el notificador
+  void _onProductsChanged() {
+    print(">>> Notificación recibida en VentasPasteles: Recargando productos...");
+    if (mounted) {
+      _cargar();
     }
   }
 
   @override
   void dispose() {
-    try {
-      _unsub?.call();
-    } catch (_) {}
-    _unsub = null;
+    // ✨ 6. REEMPLAZA el unsubscribe con la eliminación del listener
+    Provider.of<ProductNotifier>(context, listen: false)
+        .removeListener(_onProductsChanged);
     super.dispose();
   }
 
@@ -73,14 +79,20 @@ class _VentasPastelesState extends State<VentasPasteles> {
   }
 
   // ---------- Data (PB) ----------
+  // (La función _cargar ya estaba correcta, se queda igual)
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
+      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Pasteles"');
+      final categoriaPastelesId = categoriaRecord.id;
+      
       final res = await pb.collection('productos').getList(
             perPage: 200,
-            filter: 'Categoria = "Pasteles"', // 👈 colección/flag de pasteles
+            filter: 'Categoria = "$categoriaPastelesId"',
             sort: 'Nombre',
           );
+
       if (!mounted) return;
       setState(() {
         _items = res.items;
@@ -88,7 +100,10 @@ class _VentasPastelesState extends State<VentasPasteles> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _items = [];
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al cargar Pasteles: $e')),
       );
@@ -125,7 +140,6 @@ class _VentasPastelesState extends State<VentasPasteles> {
               builder: (context, constraints) {
                 final todosConStock = _items.where((r) => _stock(r) > 0).toList();
 
-                // División automática por nombre:
                 final chocolate = todosConStock.where((r) {
                   final n = _nombre(r).trim();
                   return n.toLowerCase().startsWith('choco');
@@ -142,36 +156,30 @@ class _VentasPastelesState extends State<VentasPasteles> {
                   );
                 }
 
-                // Tamaño de botones (similar a tu estilo)
-                const double spacing = 20;
-                final int columnas = constraints.maxWidth > 700 ? 3 : 2;
-                final double buttonSize =
-                    (constraints.maxWidth / 2 - (spacing * (columnas + 1)) / 2);
+                final double spacing = 16;
+                final double buttonSize = (constraints.maxWidth / 2) - (spacing * 1.5);
+
 
                 return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(spacing),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ------------ Columna Vainilla ------------
                       Expanded(
                         child: _buildColumnaSabores(
                           titulo: 'Vainilla',
                           color: const Color.fromARGB(255, 237, 233, 175),
                           productos: vainilla,
                           buttonSize: buttonSize,
-                          columnas: columnas,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      // ------------ Columna Chocolate ------------
+                      SizedBox(width: spacing),
                       Expanded(
                         child: _buildColumnaSabores(
                           titulo: 'Chocolate',
                           color: const Color.fromARGB(255, 192, 130, 130),
                           productos: chocolate,
                           buttonSize: buttonSize,
-                          columnas: columnas,
                         ),
                       ),
                     ],
@@ -187,24 +195,26 @@ class _VentasPastelesState extends State<VentasPasteles> {
     required Color color,
     required List<RecordModel> productos,
     required double buttonSize,
-    required int columnas,
   }) {
     return Column(
       children: [
         Text(titulo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        Wrap(
-          spacing: 20,
-          runSpacing: 20,
-          children: productos.map((r) {
+        if (productos.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Text('No hay productos', style: TextStyle(color: Colors.grey)),
+          ),
+        ...productos.map((r) {
             final nombre = _nombre(r);
-            final precio = _precio(r) <= 0 ? 50.0 : _precio(r); // default 50 si no hay precio
+            final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
             final stock = _stock(r);
             final url = _iconUrl(r);
             final assetFallback = 'assets/pasteles/${_slug(nombre)}.png';
 
-            return SizedBox(
+            return Container(
               width: buttonSize,
+              margin: const EdgeInsets.only(bottom: 16),
               child: Column(
                 children: [
                   SizedBox(
@@ -254,7 +264,6 @@ class _VentasPastelesState extends State<VentasPasteles> {
               ),
             );
           }).toList(),
-        ),
       ],
     );
   }
