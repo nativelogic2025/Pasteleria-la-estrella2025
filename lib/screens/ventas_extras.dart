@@ -85,13 +85,13 @@ class VentasExtras extends StatefulWidget {
     setState(() => _loading = true);
 
     try {
-      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Extras"');
+      final categoriaRecord = await pb.collection('categoria').getFirstListItem('nombre = "Extras"');
       final categoriaExtrasId = categoriaRecord.id;
 
-      final res = await pb.collection('productos').getList(
+      final res = await pb.collection('producto').getList(
             perPage: 200,
-            filter: 'Categoria = "$categoriaExtrasId"',
-            sort: 'Nombre',
+            filter: 'id_categoria = "$categoriaExtrasId"',
+            sort: 'nombre',
           );
           
       if (!mounted) return;

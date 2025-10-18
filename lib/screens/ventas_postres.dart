@@ -86,14 +86,14 @@ class VentasPostres extends StatefulWidget {
 
     try {
       // 1. Primero, obtenemos el ID de la categoría "Postres"
-      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Postres"');
+      final categoriaRecord = await pb.collection('categoria').getFirstListItem('nombre = "Postres"');
       final categoriaPostresId = categoriaRecord.id;
 
       // 2. Luego, usamos ese ID para filtrar los productos
-      final res = await pb.collection('productos').getList(
+      final res = await pb.collection('producto').getList(
             perPage: 200,
-            filter: 'Categoria = "$categoriaPostresId"', // Se usa el ID
-            sort: 'Nombre',
+            filter: 'id_categoria = "$categoriaPostresId"', // Se usa el ID
+            sort: 'nombre',
           );
       if (!mounted) return;
       setState(() {

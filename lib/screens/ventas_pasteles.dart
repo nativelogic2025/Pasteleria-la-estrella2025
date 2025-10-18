@@ -84,13 +84,13 @@ class _VentasPastelesState extends State<VentasPasteles> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Pasteles"');
+      final categoriaRecord = await pb.collection('categoria').getFirstListItem('nombre = "Pasteles"');
       final categoriaPastelesId = categoriaRecord.id;
       
-      final res = await pb.collection('productos').getList(
+      final res = await pb.collection('producto').getList(
             perPage: 200,
-            filter: 'Categoria = "$categoriaPastelesId"',
-            sort: 'Nombre',
+            filter: 'id_categoria = "$categoriaPastelesId"',
+            sort: 'nombre',
           );
 
       if (!mounted) return;

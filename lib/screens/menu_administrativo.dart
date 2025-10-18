@@ -6,7 +6,7 @@ import 'stock_screen.dart';
 import 'catalogo_screen.dart';
 import 'ver_pedidos_screen.dart';
 import 'estado_cuenta_screen.dart';
-import 'agregar_inventario_screen.dart';
+import 'Inventario_screen.dart';
 
 class MenuAdministrativo extends StatelessWidget {
   const MenuAdministrativo({super.key});
@@ -20,7 +20,7 @@ class MenuAdministrativo extends StatelessWidget {
       'Catalogo',
       'Ver Pedidos',
       'Estado de Cuenta',
-      'Agregar inventario',
+      'Inventario',
     ];
 
     final List<IconData> iconos = [
@@ -40,7 +40,7 @@ class MenuAdministrativo extends StatelessWidget {
       const CatalogoScreen(),
       const VerPedidosScreen(),
       const EstadoCuentaScreen(),
-      const AgregarInventarioScreen(),
+      const InventarioScreen(),
     ];
 
     return Scaffold(

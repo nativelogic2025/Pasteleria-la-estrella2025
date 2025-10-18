@@ -85,13 +85,13 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     setState(() => _loading = true);
 
     try {
-      final categoriaRecord = await pb.collection('categorias').getFirstListItem('nombre = "Reposteria"');
+      final categoriaRecord = await pb.collection('categoria').getFirstListItem('nombre = "Reposteria"');
       final categoriaReposteriaId = categoriaRecord.id;
 
-      final res = await pb.collection('productos').getList(
+      final res = await pb.collection('producto').getList(
             perPage: 200,
-            filter: 'Categoria = "$categoriaReposteriaId"',
-            sort: 'Nombre',
+            filter: 'id_categoria = "$categoriaReposteriaId"',
+            sort: 'nombre',
           );
       if (!mounted) return;
       setState(() {
