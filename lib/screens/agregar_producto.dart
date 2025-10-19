@@ -714,7 +714,7 @@ class _DialogoCrearRecetaState extends State<_DialogoCrearReceta> {
   final _nombreCtrl = TextEditingController();
   final _descripcionCtrl = TextEditingController();
   bool _guardando = false;
-  Map<String, TextEditingController> _ingredientes = {};
+  final Map<String, TextEditingController> _ingredientes = {};
 
   void _agregarIngrediente() async {
     final matPrimSeleccionada = await showDialog<RecordModel>(
@@ -741,7 +741,7 @@ class _DialogoCrearRecetaState extends State<_DialogoCrearReceta> {
                 const Divider(),
                 ...widget.materiasPrimas
                     .map((mp) => SimpleDialogOption(onPressed: () => Navigator.pop(context, mp), child: Text(mp.data['nombre'])))
-                    .toList(),
+                    ,
               ],
             ));
 

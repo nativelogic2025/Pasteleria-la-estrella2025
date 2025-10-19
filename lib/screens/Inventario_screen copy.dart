@@ -121,8 +121,8 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
 
       // 2. Ejecutamos ambas consultas al mismo tiempo
       final results = await Future.wait([productosFuture, variantesFuture]);
-      final todosLosProductos = results[0] as List<RecordModel>;
-      final todasLasVariantes = results[1] as List<RecordModel>;
+      final todosLosProductos = results[0];
+      final todasLasVariantes = results[1];
 
       if (mounted) {
         _agruparProductos(todosLosProductos, todasLasVariantes);

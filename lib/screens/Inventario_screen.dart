@@ -137,8 +137,8 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
       final variantesFuture = pb.collection('productoVariante').getFullList(filter: filtroVariantes, expand: 'id_producto.id_categoria');
 
       final results = await Future.wait([productosFuture, variantesFuture]);
-      final todosLosProductos = results[0] as List<RecordModel>;
-      final todasLasVariantes = results[1] as List<RecordModel>;
+      final todosLosProductos = results[0];
+      final todasLasVariantes = results[1];
 
       if (mounted) {
         for (final v in todasLasVariantes) {

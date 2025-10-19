@@ -263,7 +263,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
                 ],
               ),
             );
-          }).toList(),
+          }),
       ],
     );
   }

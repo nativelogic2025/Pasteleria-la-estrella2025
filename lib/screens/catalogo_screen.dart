@@ -36,9 +36,9 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
 
       if (mounted) {
         setState(() {
-          _recetasDisponibles = results[0] as List<RecordModel>;
-          _materiasPrimasDisponibles = results[1] as List<RecordModel>;
-          _unidadesDeMedida = results[2] as List<RecordModel>;
+          _recetasDisponibles = results[0];
+          _materiasPrimasDisponibles = results[1];
+          _unidadesDeMedida = results[2];
           _cargandoDatos = false;
         });
       }
@@ -238,7 +238,7 @@ class _DialogoCrearRecetaState extends State<_DialogoCrearReceta> {
                 ...widget.materiasPrimas
                     .where((mp) => !_ingredientes.containsKey(mp.id)) // No mostrar ingredientes ya añadidos
                     .map((mp) => SimpleDialogOption(onPressed: () => Navigator.pop(context, mp), child: Text(mp.data['nombre'])))
-                    .toList(),
+                    ,
               ],
             ));
 
