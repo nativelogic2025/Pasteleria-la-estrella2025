@@ -48,6 +48,7 @@ dependencies:
   table_calendar: ^3.0.11 
   # ✨ Paquete para abrir URLs
   url_launcher: ^6.2.6 
+  confetti: ^0.7.0
 
 
 dev_dependencies:
