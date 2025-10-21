@@ -45,6 +45,13 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   String? _nuevoPdfFilename;
   bool _eliminarPdfActual = false;
 
+  // 🔎 NUEVO: controlador para ajustar zoom inicial
+  late final PdfViewerController _pdfController;
+
+  // Para centrar/limitar tamaño del PDF
+  static const double _pdfMaxWidth = 820; // ancho máximo “cómodo”
+  static const double _pdfFixedHeight = 520; // altura compacta
+
   // Ingredientes
   final _formKey = GlobalKey<FormState>();
   late Future<List<RecordModel>> _ingredientesFuture;
@@ -55,6 +62,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   @override
   void initState() {
     super.initState();
+    _pdfController = PdfViewerController();
     _ingredientesFuture = _cargarIngredientes();
     _cargarMateriasPrimas();
     _setPdfUrl();
@@ -258,67 +266,54 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
     });
   }
 
-  // --- UI ---
+  // --- UI con pestañas (Solución 2) ---
   @override
   Widget build(BuildContext context) {
     final nombreReceta = widget.receta.data['nombre']?.toString() ?? 'Detalle';
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
-        title: Text(nombreReceta),
-        actions: _isSaving
-            ? []
-            : [
-                if (_isEditing)
-                  TextButton(
-                    onPressed: () => _toggleEditMode(cancel: true),
-                    child: const Text('Cancelar'),
-                  ),
-                IconButton(
-                  icon: Icon(_isEditing ? Icons.save : Icons.edit),
-                  onPressed: _isEditing ? _guardarCambios : _toggleEditMode,
-                  tooltip: _isEditing ? 'Guardar Cambios' : 'Editar Receta',
-                ),
-              ],
-      ),
-      body: _isSaving
-          ? const _SavingOverlay()
-          : Form(
-              key: _formKey,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-                    children: [
-                      _SectionTitle(
-                        title: 'Procedimiento (PDF)',
-                        trailing: _pdfUrl != null && !kIsWeb
-                            ? FilledButton.tonalIcon(
-                                onPressed: () {
-                                  // En móvil/escritorio mostramos visor dentro
-                                  // (botón sirve para refrescar el viewer si cambió)
-                                  setState(() => _pdfViewerKey = UniqueKey());
-                                },
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Actualizar visor'),
-                              )
-                            : null,
-                      ),
-                      _buildSeccionPdfCard(),
 
-                      const SizedBox(height: 24),
-                      const _SectionTitle(title: 'Ingredientes'),
-                      _buildSeccionIngredientesCard(),
-                    ],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 1,
+          title: Text(nombreReceta),
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.picture_as_pdf), text: 'Procedimiento'),
+              Tab(icon: Icon(Icons.list), text: 'Ingredientes'),
+            ],
+          ),
+          actions: _isSaving
+              ? []
+              : [
+                  if (_isEditing)
+                    TextButton(
+                      onPressed: () => _toggleEditMode(cancel: true),
+                      child: const Text('Cancelar'),
+                    ),
+                  IconButton(
+                    icon: Icon(_isEditing ? Icons.save : Icons.edit),
+                    onPressed: _isEditing ? _guardarCambios : _toggleEditMode,
+                    tooltip: _isEditing ? 'Guardar Cambios' : 'Editar Receta',
                   ),
+                ],
+        ),
+        body: _isSaving
+            ? const _SavingOverlay()
+            : Form(
+                key: _formKey,
+                child: const TabBarView(
+                  physics: ClampingScrollPhysics(),
+                  children: [
+                    _PdfTab(),
+                    _IngredientesTab(),
+                  ],
                 ),
               ),
-            ),
+      ),
     );
   }
 
@@ -347,7 +342,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
       );
     }
 
-    // En web: botón grande para abrir en nueva pestaña
+    // En web: botón centrado para abrir en nueva pestaña
     if (kIsWeb) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -355,37 +350,57 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
           const Text(
             'El visor interno de PDF está deshabilitado en web.',
             style: TextStyle(color: Colors.black54),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _abrirPdfEnNuevaPestana,
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('Abrir PDF en una nueva pestaña'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          Center(
+            child: FilledButton.icon(
+              onPressed: _abrirPdfEnNuevaPestana,
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Abrir PDF en una nueva pestaña'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              ),
             ),
           ),
         ],
       );
     }
 
-    // En móvil/escritorio: visor embebido
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE5E5E5)),
-          borderRadius: BorderRadius.circular(10),
+    // 📄 Móvil/desktop: visor embebido centrado y compacto
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _pdfMaxWidth, // evita que se haga enorme en pantallas grandes
         ),
-        height: 500,
-        child: SfPdfViewer.network(_pdfUrl!, key: _pdfViewerKey),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFE5E5E5)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: SizedBox(
+              height: _pdfFixedHeight, // altura contenida
+              child: SfPdfViewer.network(
+                _pdfUrl!,
+                key: _pdfViewerKey,
+                controller: _pdfController,
+                onDocumentLoaded: (_) {
+                  // 🔍 Zoom inicial un poco menor para que “se vea más chico”
+                  _pdfController.zoomLevel = 0.9;
+                },
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  // Descarga y validación por si quieres usar bytes (no cambia lógica actual)
+  // Descarga y validación por si quieres usar bytes (opcional)
   Future<Uint8List> _descargarPdfBytes(String url) async {
     final uri = Uri.parse(url);
     final response = await http.get(uri);
@@ -424,8 +439,10 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
           ListTile(
             leading: const Icon(Icons.picture_as_pdf, color: Colors.black87),
             title: const Text('PDF actual'),
-            subtitle: Text(widget.receta.data['descripcion'].toString(),
-                overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              widget.receta.data['descripcion'].toString(),
+              overflow: TextOverflow.ellipsis,
+            ),
             trailing: FilledButton.tonal(
               onPressed: _abrirPdfEnNuevaPestana,
               child: const Text('Abrir'),
@@ -637,6 +654,61 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   }
 }
 
+// ======= P E S T A Ñ A S   (TabBarView) =======
+
+class _PdfTab extends StatelessWidget {
+  const _PdfTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.findAncestorStateOfType<_RecetaDetalleScreenState>()!;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+        physics: const ClampingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SectionTitle(
+              title: 'Procedimiento (PDF)',
+              trailing: state._pdfUrl != null && !kIsWeb
+                  ? FilledButton.tonalIcon(
+                      onPressed: () {
+                        state.setState(() => state._pdfViewerKey = UniqueKey());
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Actualizar visor'),
+                    )
+                  : null,
+            ),
+            state._buildSeccionPdfCard(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IngredientesTab extends StatelessWidget {
+  const _IngredientesTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.findAncestorStateOfType<_RecetaDetalleScreenState>()!;
+    return SafeArea(
+      child: ListView(
+        key: const PageStorageKey('ingredientes-list'),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+        physics: const ClampingScrollPhysics(),
+        children: [
+          const _SectionTitle(title: 'Ingredientes'),
+          state._buildSeccionIngredientesCard(),
+        ],
+      ),
+    );
+  }
+}
+
 // ======= W I D G E T S   D E   A P O Y O =======
 
 class _SectionTitle extends StatelessWidget {
@@ -716,10 +788,10 @@ class _SavingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
           Text('Guardando...'),

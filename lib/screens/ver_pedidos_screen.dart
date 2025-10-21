@@ -1,4 +1,49 @@
+import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
+
+// ⬇️ importa tu pantalla de consulta
+import 'ver_pedido_consulta.dart';
+
+// =======================
+//   MODELO REFINADO
+// =======================
+enum PedidoEstado { pendiente, hecho, entregado }
+
+class PedidoEvent {
+  final DateTime fechaHora;
+  final String folio;        // Folio visible y para búsqueda
+  final String cliente;      // Nombre cliente
+  final String telefono;     // ⬅️ NUEVO: para búsqueda
+  final double restante;     // Falta por liquidar
+  final PedidoEstado estado; // Estado
+
+  PedidoEvent({
+    required this.fechaHora,
+    required this.folio,
+    required this.cliente,
+    required this.telefono,
+    required this.restante,
+    required this.estado,
+  });
+
+  PedidoEvent copyWith({
+    DateTime? fechaHora,
+    String? folio,
+    String? cliente,
+    String? telefono,
+    double? restante,
+    PedidoEstado? estado,
+  }) {
+    return PedidoEvent(
+      fechaHora: fechaHora ?? this.fechaHora,
+      folio: folio ?? this.folio,
+      cliente: cliente ?? this.cliente,
+      telefono: telefono ?? this.telefono,
+      restante: restante ?? this.restante,
+      estado: estado ?? this.estado,
+    );
+  }
+}
 
 class VerPedidosScreen extends StatefulWidget {
   const VerPedidosScreen({super.key});
@@ -7,55 +52,45 @@ class VerPedidosScreen extends StatefulWidget {
   State<VerPedidosScreen> createState() => _VerPedidosScreenState();
 }
 
-// =======================
-//   MODELO SIMPLE
-// =======================
-class PedidoEvent {
-  final DateTime fechaHora;
-  final String titulo;
-  final String cursoOCliente; // o proyecto / cliente
-  final bool pendiente; // para mostrar estado
-
-  PedidoEvent({
-    required this.fechaHora,
-    required this.titulo,
-    required this.cursoOCliente,
-    this.pendiente = true,
-  });
-}
-
 class _VerPedidosScreenState extends State<VerPedidosScreen> {
   // Estado de filtros / búsqueda
   String _filtroTipo = 'Todos';
-  String _orden = 'Fecha (asc)';
-  String _buscar = '';
+  String _buscar = ''; // ⬅️ ahora busca folio/cliente/teléfono
   DateTime _mesActual = DateTime(DateTime.now().year, DateTime.now().month);
 
-  // Datos de ejemplo
+  // Datos de ejemplo (ajusta a tu fuente real)
   final List<PedidoEvent> _todos = [
     PedidoEvent(
       fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 21, 22, 0),
-      titulo: 'Evidencia de movimientos del carro - batman',
-      cursoOCliente: 'Implementación de Soluciones IoT',
-      pendiente: true,
+      folio: 'A-301',
+      cliente: 'Implementación de Soluciones IoT',
+      telefono: '771-123-4567',
+      restante: 250.00,
+      estado: PedidoEstado.hecho,
     ),
     PedidoEvent(
       fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 8, 9, 30),
-      titulo: 'Entrega de pedido #A-204',
-      cursoOCliente: 'Cliente: ACME S.A.',
-      pendiente: false,
+      folio: 'A-204',
+      cliente: 'ACME S.A.',
+      telefono: '771-555-1000',
+      restante: 0.00,
+      estado: PedidoEstado.entregado,
     ),
     PedidoEvent(
       fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 10, 16, 0),
-      titulo: 'Instalación de sensores',
-      cursoOCliente: 'Proyecto: Almacén 3',
-      pendiente: true,
+      folio: 'B-115',
+      cliente: 'Proyecto: Almacén 3',
+      telefono: '772-888-2222',
+      restante: 120.00,
+      estado: PedidoEstado.pendiente,
     ),
     PedidoEvent(
       fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 3, 12, 15),
-      titulo: 'Revisión factura #778',
-      cursoOCliente: 'Cliente: InnoTech',
-      pendiente: true,
+      folio: 'C-778',
+      cliente: 'InnoTech',
+      telefono: '771-000-7788',
+      restante: 50.00,
+      estado: PedidoEstado.pendiente,
     ),
   ];
 
@@ -89,30 +124,18 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
                   alignment: WrapAlignment.spaceBetween,
                   runSpacing: 8,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _FiltroDropdown<String>(
-                          value: _filtroTipo,
-                          items: const ['Todos', 'Pendientes', 'Completados'],
-                          onChanged: (v) => setState(() => _filtroTipo = v!),
-                          label: 'Todos',
-                        ),
-                        const SizedBox(width: 8),
-                        _FiltroDropdown<String>(
-                          value: _orden,
-                          items: const ['Fecha (asc)', 'Fecha (desc)'],
-                          onChanged: (v) => setState(() => _orden = v!),
-                          label: 'Ordenar por fechas',
-                        ),
-                      ],
+                    _FiltroDropdown<String>(
+                      value: _filtroTipo,
+                      items: const ['Todos', 'Pendientes', 'Completados'],
+                      onChanged: (v) => setState(() => _filtroTipo = v!),
+                      label: 'Estado',
                     ),
                     SizedBox(
                       width: 340,
                       child: TextField(
-                        onChanged: (v) => setState(() => _buscar = v.trim().toLowerCase()),
+                        onChanged: (v) => setState(() => _buscar = v.trim()),
                         decoration: InputDecoration(
-                          hintText: 'Buscar por nombre o tipo de actividad',
+                          hintText: 'Buscar por folio, cliente o teléfono',
                           prefixIcon: const Icon(Icons.search),
                           isDense: true,
                           filled: true,
@@ -156,11 +179,7 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
                       const SizedBox(height: 8),
                       ...eventos.map((e) => _TimelineTile(
                             event: e,
-                            onAddEnvio: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Acción: Añadir envío')),
-                              );
-                            },
+                            onEditar: () => _abrirEditar(context, e),
                           )),
                     ],
                   );
@@ -171,7 +190,7 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
                       child: Text(
-                        'No hay actividades que coincidan con el filtro.',
+                        'No hay pedidos que coincidan con el filtro.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
                       ),
                     ),
@@ -214,7 +233,7 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
                         );
                       },
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A41FF), // azul como la imagen
+                        backgroundColor: const Color(0xFF1A41FF),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                       ),
@@ -252,26 +271,27 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
   List<PedidoEvent> _aplicarFiltrosYBusqueda(List<PedidoEvent> base) {
     var list = [...base];
 
-    // Búsqueda
+    // 🔎 Búsqueda: folio (case-insensitive), cliente (case-insensitive), teléfono (tal cual)
     if (_buscar.isNotEmpty) {
-      list = list
-          .where((e) =>
-              e.titulo.toLowerCase().contains(_buscar) ||
-              e.cursoOCliente.toLowerCase().contains(_buscar))
-          .toList();
+      final qUpper = _buscar.toUpperCase();
+      final qLower = _buscar.toLowerCase();
+      list = list.where((e) {
+        final folioOk = e.folio.toUpperCase().contains(qUpper);
+        final clienteOk = e.cliente.toLowerCase().contains(qLower);
+        final telOk = e.telefono.contains(_buscar);
+        return folioOk || clienteOk || telOk;
+      }).toList();
     }
 
     // Filtro por estado
     if (_filtroTipo == 'Pendientes') {
-      list = list.where((e) => e.pendiente).toList();
+      list = list.where((e) => e.estado == PedidoEstado.pendiente).toList();
     } else if (_filtroTipo == 'Completados') {
-      list = list.where((e) => !e.pendiente).toList();
+      list = list.where((e) => e.estado == PedidoEstado.entregado).toList();
     }
 
-    // Orden
+    // Orden cronológico asc
     list.sort((a, b) => a.fechaHora.compareTo(b.fechaHora));
-    if (_orden == 'Fecha (desc)') list = list.reversed.toList();
-
     return list;
   }
 
@@ -281,7 +301,6 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
       final key = DateTime(e.fechaHora.year, e.fechaHora.month, e.fechaHora.day);
       map.putIfAbsent(key, () => []).add(e);
     }
-    // Orden por fecha
     final entries = map.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
     return Map.fromEntries(entries);
@@ -295,7 +314,39 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
     const dias = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
     final dow = dias[(DateTime(d.year, d.month, d.day).weekday + 6) % 7];
     return '$dow, ${d.day} de ${meses[d.month - 1]} de ${d.year}';
-    // ej: martes, 21 de octubre de 2025
+  }
+
+  void _abrirEditar(BuildContext context, PedidoEvent e) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => EditarPedidoSheet(
+        event: e,
+        onGuardar: (nuevo) {
+          // Aquí actualizarías tu fuente de datos real (PB/SQLite/etc.)
+          final idx = _todos.indexWhere((x) => x.folio == e.folio);
+          if (idx != -1) {
+            setState(() => _todos[idx] = nuevo);
+          }
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('Pedido actualizado')));
+        },
+        onAbrirConsulta: () {
+          Navigator.pop(context);
+          // ⬇️ ahora abre la pantalla de consulta:
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const VerPedidoConsultaScreen()),
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -370,16 +421,31 @@ class _FiltroDropdown<T> extends StatelessWidget {
 
 class _TimelineTile extends StatelessWidget {
   final PedidoEvent event;
-  final VoidCallback onAddEnvio;
+  final VoidCallback onEditar;
 
   const _TimelineTile({
     required this.event,
-    required this.onAddEnvio,
+    required this.onEditar,
   });
+
+  (IconData icon, Color color, String texto) _estadoVisual(PedidoEstado e) {
+    switch (e) {
+      case PedidoEstado.entregado:
+        return (Icons.check_circle, const Color(0xFF1DB954), 'Entregado');
+      case PedidoEstado.hecho:
+        return (Icons.check_circle, const Color(0xFFFFC107), 'Hecho');
+      case PedidoEstado.pendiente:
+      default:
+        return (Icons.cancel, const Color(0xFFE53935), 'Pendiente');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hora = '${event.fechaHora.hour.toString().padLeft(2, '0')}:${event.fechaHora.minute.toString().padLeft(2, '0')}';
+    final hora =
+        '${event.fechaHora.hour.toString().padLeft(2, '0')}:${event.fechaHora.minute.toString().padLeft(2, '0')}';
+    final (iconData, color, textoEstado) = _estadoVisual(event.estado);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
@@ -387,28 +453,24 @@ class _TimelineTile extends StatelessWidget {
           // hora
           SizedBox(
             width: 52,
-            child: Text(
-              hora,
-              style: const TextStyle(color: Colors.black87),
-            ),
+            child: Text(hora, style: const TextStyle(color: Colors.black87)),
           ),
-          // icono pequeño
-          const Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: Icon(Icons.assignment_turned_in_outlined, size: 20, color: Colors.black54),
+          // icono de estado
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Icon(iconData, size: 20, color: color),
           ),
           // contenido
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Folio “clickable”
                 InkWell(
                   borderRadius: BorderRadius.circular(4),
-                  onTap: () {
-                    // Accion: abrir detalle del pedido
-                  },
+                  onTap: () {},
                   child: Text(
-                    event.titulo,
+                    'Folio: ${event.folio}',
                     style: const TextStyle(
                       color: Color(0xFF1A41FF),
                       fontWeight: FontWeight.w700,
@@ -417,8 +479,9 @@ class _TimelineTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // Estado + cliente + restante + teléfono
                 Text(
-                  '${event.pendiente ? "Tarea está en fecha de entrega" : "Completado"} · ${event.cursoOCliente}',
+                  '$textoEstado · ${event.cliente} · Tel: ${event.telefono} · Restante: \$${event.restante.toStringAsFixed(2)}',
                   style: const TextStyle(color: Colors.black54),
                 ),
               ],
@@ -426,12 +489,12 @@ class _TimelineTile extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           OutlinedButton(
-            onPressed: onAddEnvio,
+            onPressed: onEditar,
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFFE0E0E0)),
               foregroundColor: Colors.black87,
             ),
-            child: const Text('Añadir envío'),
+            child: const Text('Editar'),
           ),
         ],
       ),
@@ -506,20 +569,16 @@ class _CalendarGrid extends StatelessWidget {
     final firstWeekday = firstOfMonth.weekday; // 1=lunes .. 7=domingo
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
 
-    // Empezamos desde lunes
     final leadingEmpty = (firstWeekday + 6) % 7; // de 0..6
-
     final totalCells = leadingEmpty + daysInMonth;
     final rows = (totalCells / 7).ceil();
 
-    // Días que tienen eventos
     final Set<int> daysWithEvents = events
         .where((e) => e.fechaHora.month == month.month && e.fechaHora.year == month.year)
         .map((e) => e.fechaHora.day)
         .toSet();
 
     final today = DateTime.now();
-
     final headers = const ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
     return Column(
@@ -579,14 +638,12 @@ class _CalendarGrid extends StatelessWidget {
                               top: 8,
                               right: 8,
                               child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: isToday ? Colors.black : Colors.transparent,
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color:
-                                        isToday ? Colors.black : Colors.transparent,
+                                    color: isToday ? Colors.black : Colors.transparent,
                                   ),
                                 ),
                                 child: Text(
@@ -599,14 +656,16 @@ class _CalendarGrid extends StatelessWidget {
                               ),
                             ),
                             if (hasEvent)
-                              Positioned(
+                              const Positioned(
                                 bottom: 10,
-                                child: Container(
+                                child: SizedBox(
                                   width: 6,
                                   height: 6,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF1A41FF),
-                                    shape: BoxShape.circle,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Color(0xFF1A41FF),
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -621,6 +680,185 @@ class _CalendarGrid extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// =======================
+//  SHEET DE EDICIÓN
+// =======================
+
+class EditarPedidoSheet extends StatefulWidget {
+  final PedidoEvent event;
+  final void Function(PedidoEvent nuevo) onGuardar;
+  final VoidCallback onAbrirConsulta; // ⬅️ cambia a consulta
+
+  const EditarPedidoSheet({
+    super.key,
+    required this.event,
+    required this.onGuardar,
+    required this.onAbrirConsulta,
+  });
+
+  @override
+  State<EditarPedidoSheet> createState() => _EditarPedidoSheetState();
+}
+
+class _EditarPedidoSheetState extends State<EditarPedidoSheet> {
+  late TextEditingController _folioCtrl;
+  late TextEditingController _clienteCtrl;
+  late TextEditingController _telefonoCtrl; // ⬅️ NUEVO
+  late TextEditingController _restanteCtrl;
+  late PedidoEstado _estado;
+
+  @override
+  void initState() {
+    super.initState();
+    _folioCtrl = TextEditingController(text: widget.event.folio);
+    _clienteCtrl = TextEditingController(text: widget.event.cliente);
+    _telefonoCtrl = TextEditingController(text: widget.event.telefono); // ⬅️
+    _restanteCtrl = TextEditingController(text: widget.event.restante.toStringAsFixed(2));
+    _estado = widget.event.estado;
+  }
+
+  @override
+  void dispose() {
+    _folioCtrl.dispose();
+    _clienteCtrl.dispose();
+    _telefonoCtrl.dispose(); // ⬅️
+    _restanteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, controller) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: ListView(
+            controller: controller,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text('Editar pedido', style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              )),
+              const SizedBox(height: 16),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _folioCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Folio',
+                        filled: true,
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.tag),
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<PedidoEstado>(
+                      value: _estado,
+                      items: const [
+                        DropdownMenuItem(value: PedidoEstado.pendiente, child: Text('Pendiente')),
+                        DropdownMenuItem(value: PedidoEstado.hecho, child: Text('Hecho')),
+                        DropdownMenuItem(value: PedidoEstado.entregado, child: Text('Entregado')),
+                      ],
+                      onChanged: (v) => setState(() => _estado = v!),
+                      decoration: const InputDecoration(
+                        labelText: 'Estado',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _clienteCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Cliente',
+                  filled: true,
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _telefonoCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Teléfono',
+                  filled: true,
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.call_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _restanteCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Restante',
+                  filled: true,
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.payments_outlined),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: widget.onAbrirConsulta,
+                      child: const Text('Ver pedido (consulta)'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        final restante = double.tryParse(_restanteCtrl.text) ?? 0;
+                        final nuevo = widget.event.copyWith(
+                          folio: _folioCtrl.text.trim().toUpperCase(),
+                          cliente: _clienteCtrl.text.trim(),
+                          telefono: _telefonoCtrl.text.trim(),
+                          restante: restante,
+                          estado: _estado,
+                        );
+                        widget.onGuardar(nuevo);
+                      },
+                      child: const Text('Guardar cambios'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

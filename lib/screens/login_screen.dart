@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'auth_service.dart';
 import 'menu_administrativo.dart';
 import 'menu_colaborador.dart';
+// 👇 opcional: para ocultar los botones en versión release
+import 'package:flutter/foundation.dart' show kReleaseMode;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -52,7 +54,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'No se pudo iniciar sesión. Revisa tus credenciales o el servidor.\n$e';
+        _error =
+            'No se pudo iniciar sesión. Revisa tus credenciales o el servidor.\n$e';
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -93,7 +96,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const Text(
                       "Login",
-                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 30),
 
@@ -107,7 +111,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         hintText: 'correo@dominio.com',
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Ingresa tu correo';
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Ingresa tu correo';
+                        }
                         if (!v.contains('@')) return 'Correo inválido';
                         return null;
                       },
@@ -126,10 +132,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         hintText: 'Ingresa tu contraseña',
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                            _isPasswordVisible
+                                ? Icons.visibility
+                                : Icons.visibility_off,
                           ),
                           onPressed: () {
-                            setState(() => _isPasswordVisible = !_isPasswordVisible);
+                            setState(
+                                () => _isPasswordVisible = !_isPasswordVisible);
                           },
                         ),
                       ),
@@ -155,7 +164,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: ElevatedButton(
                         onPressed: _loading ? null : _doLogin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color.fromARGB(255, 106, 224, 143),
+                          backgroundColor:
+                              const Color.fromARGB(255, 106, 224, 143),
                         ),
                         child: _loading
                             ? const SizedBox(
@@ -169,6 +179,45 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                       ),
                     ),
+
+                    // 👇👇👇 BOTONES TEMPORALES DE PRUEBA 👇👇👇
+                    if (!kReleaseMode) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const MenuAdministrativo()),
+                                );
+                              },
+                              icon: const Icon(Icons.admin_panel_settings),
+                              label: const Text('Entrar como Admin (debug)'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const MenuColaborador()),
+                                );
+                              },
+                              icon: const Icon(Icons.group),
+                              label:
+                                  const Text('Entrar como Colaborador (debug)'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    // ☝️☝️☝️ BOTONES TEMPORALES DE PRUEBA ☝️☝️☝️
                   ],
                 ),
               ),
