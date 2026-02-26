@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:pos_pasteleria_la_estrella/screens/supabase_client.dart';
 import 'package:provider/provider.dart';
-import 'package:pocketbase/pocketbase.dart';
 import 'carrito_provider.dart';
 import 'carrito.dart';
 import 'producto.dart' as producto_model;
 import '../product_notifier.dart';
-import 'pb_client.dart';
 
 class VentasVelas extends StatefulWidget {
   const VentasVelas({super.key});
@@ -15,7 +14,7 @@ class VentasVelas extends StatefulWidget {
 }
 
 class _VentasVelasState extends State<VentasVelas> {
-  List<RecordModel> _items = [];
+  List<Map<String, dynamic>> _items = [];
   bool _loading = true;
 
   // 👇 FIX: guardamos la ref al notifier para no leer Inheriteds en dispose()
@@ -26,24 +25,11 @@ class _VentasVelasState extends State<VentasVelas> {
   void initState() {
     super.initState();
     _cargar();
-    // ✅ Puedes usar read() en initState sin suscribirte al árbol
-    // (alternativa: hacerlo en didChangeDependencies una sola vez)
-    // ignore: use_build_context_synchronously
     _notifier = context.read<ProductNotifier>();
     _notifier.addListener(_onProductsChanged);
     _listenerAttached = true;
   }
 
-  // (Opcional) Si prefieres absoluto safety, mueve el attach aquí:
-  // @override
-  // void didChangeDependencies() {
-  //   super.didChangeDependencies();
-  //   if (!_listenerAttached) {
-  //     _notifier = context.read<ProductNotifier>();
-  //     _notifier.addListener(_onProductsChanged);
-  //     _listenerAttached = true;
-  //   }
-  // }
 
   void _onProductsChanged() {
     if (mounted) {
@@ -60,73 +46,89 @@ class _VentasVelasState extends State<VentasVelas> {
     super.dispose();
   }
 
-  // ---------- Lectura de campos ----------
-  RecordModel? _getProductoRecord(RecordModel r) {
-    if (r.expand.containsKey('id_producto') && r.expand['id_producto']!.isNotEmpty) {
-      return r.expand['id_producto']!.first;
-    }
-    return null;
+  // ---------- Lectura de campos (Adaptado a Mapas) ----------
+  Map<String, dynamic>? _getProductoData(Map<String, dynamic> r) {
+    return r['id_producto'] as Map<String, dynamic>?;
   }
 
-  String _nombreBase(RecordModel r) {
-    final productoBase = _getProductoRecord(r);
-    return productoBase?.data['nombre']?.toString() ?? 'Producto';
+  String _nombreBase(Map<String, dynamic> r) {
+    final productoBase = _getProductoData(r);
+    return productoBase?['nombre']?.toString() ?? 'Producto';
   }
 
-  double _precio(RecordModel r) {
-    final v = r.data['precio_final'];
+  double _precio(Map<String, dynamic> r) {
+    final v = r['precio_final'];
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '0') ?? 0.0;
   }
 
-  int _stock(RecordModel r) {
-    final v = r.data['cantidadStock'];
+  int _stock(Map<String, dynamic> r) {
+    final v = r['cantidadStock'];
     if (v is int) return v;
     return int.tryParse(v?.toString() ?? '0') ?? 0;
   }
 
-  String? _iconUrl(RecordModel r, {String size = '300x300'}) {
-    final productoBase = _getProductoRecord(r);
+  String? _iconUrl(Map<String, dynamic> r) {
+    final productoBase = _getProductoData(r);
     if (productoBase == null) return null;
 
-    final file = productoBase.data['icon'];
-    if (file == null || file.toString().isEmpty) return null;
-    return pb.files.getUrl(productoBase, file.toString(), thumb: size).toString();
+    final fileName = productoBase['icon'];
+    if (fileName == null || fileName.toString().isEmpty) return null;
+
+    // Supabase Storage: Construimos la URL pública
+    // bucket: 'productos' (ajusta el nombre según tu dashboard)
+    return supabase.storage
+        .from('productos') 
+        .getPublicUrl(fileName.toString());
   }
 
-  // ---------- Data (PB) ----------
-  Future<void> _cargar() async {
+  // ---------- Data (Supabase) ----------
+Future<void> _cargar() async {
+  if (!mounted) return;
+  setState(() => _loading = true);
+
+  try {
+    // 1. Buscamos el ID de la categoría "Velas"
+    final categoriaRes = await supabase
+        .from('categoria')
+        .select('id')
+        .eq('nombre', 'Velas')
+        .single();
+    
+    final categoriaVelasId = categoriaRes['id'];
+
+    // 2. Traemos las variantes con el JOIN de producto incluido
+    // En Supabase, el "expand" se hace simplemente mencionando la tabla en el select
+    final List<Map<String, dynamic>> res = await supabase
+        .from('productoVariante')
+        .select('''
+          *,
+          id_producto (
+            id,
+            nombre,
+            icon,
+            id_categoria
+          )
+        ''')
+        .eq('id_producto.id_categoria', categoriaVelasId)
+        .order('sku');
+
     if (!mounted) return;
-    setState(() => _loading = true);
-
-    try {
-      final categoriaRecord =
-          await pb.collection('categoria').getFirstListItem('nombre = "Velas"');
-      final categoriaVelasId = categoriaRecord.id;
-
-      final res = await pb.collection('productoVariante').getList(
-        perPage: 500,
-        filter: 'id_producto.id_categoria = "$categoriaVelasId"',
-        sort: 'sku',
-        expand: 'id_producto',
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _items = res.items;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _items = [];
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar Velas: $e')),
-      );
-    }
+    setState(() {
+      _items = res;
+      _loading = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _items = [];
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al cargar Velas: $e')),
+    );
   }
+}
 
   // ---------- UI ----------
   @override
@@ -154,12 +156,14 @@ class _VentasVelasState extends State<VentasVelas> {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                final Map<String, List<RecordModel>> itemsAgrupados = {};
+                final Map<String, List<Map<String, dynamic>>> itemsAgrupados = {};
                 for (final item in _items) {
                   if (_stock(item) > 0) {
-                    final productoBase = _getProductoRecord(item);
+                    final productoBase = _getProductoData(item);
                     if (productoBase != null) {
-                      itemsAgrupados.putIfAbsent(productoBase.id, () => []).add(item);
+                      // Usamos el ID de Postgres (puede ser int o UUID)
+                      final String id = productoBase['id'].toString();
+                      itemsAgrupados.putIfAbsent(id, () => []).add(item);
                     }
                   }
                 }
@@ -261,7 +265,7 @@ class _VentasVelasState extends State<VentasVelas> {
   void _mostrarDialogoNumeros(
     BuildContext context,
     String nombreDelGrupo,
-    List<RecordModel> variantesDisponibles,
+    List<Map<String, dynamic>> variantesDisponibles,
   ) {
     showDialog(
       context: context,
@@ -273,7 +277,7 @@ class _VentasVelasState extends State<VentasVelas> {
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: variantesDisponibles.map((variante) {
-              final sku = variante.data['sku']?.toString() ?? '';
+              final sku = variante['sku']?.toString() ?? '';
               final numero = _extraerNumeroDeSku(sku) ?? sku;
               final precio = _precio(variante);
               final nombreCompleto = '$nombreDelGrupo $numero';
@@ -294,7 +298,7 @@ class _VentasVelasState extends State<VentasVelas> {
 
   // ---------- Agregar al carrito ----------
   void _agregarAlCarrito(
-      BuildContext context, RecordModel r, String nombreMostrar, double precio) {
+      BuildContext context, Map<String, dynamic> r, String nombreMostrar, double precio) {
     final imgUrl = _iconUrl(r);
     const assetFallback = 'assets/generic_icon.png';
 

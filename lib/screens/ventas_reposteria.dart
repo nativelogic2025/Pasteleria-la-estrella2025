@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:pocketbase/pocketbase.dart';
-import 'pb_client.dart';
 
 // ✨ 1. IMPORTA el nuevo notificador
 import '../product_notifier.dart';
@@ -9,6 +7,8 @@ import '../product_notifier.dart';
 import 'carrito_provider.dart';
 import 'carrito.dart';
 import 'producto.dart' as producto;
+
+import './supabase_client.dart';
 
 class VentasReposteria extends StatefulWidget {
   const VentasReposteria({super.key});
@@ -18,7 +18,7 @@ class VentasReposteria extends StatefulWidget {
 }
 
 class _VentasReposteriaState extends State<VentasReposteria> {
-  List<RecordModel> _items = [];
+  List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   // ✨ 2. ELIMINA la variable _unsub
   // UnsubscribeFunc? _unsub;
@@ -32,13 +32,6 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     Provider.of<ProductNotifier>(context, listen: false)
         .addListener(_onProductsChanged);
   }
-
-  // ✨ 4. ELIMINA la función _suscribirRealtime() por completo
-  /*
-  Future<void> _suscribirRealtime() async {
-    // ... TODO ESTO SE VA ...
-  }
-  */
 
   // ✨ 5. AÑADE esta función que será llamada por el notificador
   void _onProductsChanged() {
@@ -57,45 +50,57 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   }
 
   // ---------- Lectura de campos ----------
-  String _nombre(RecordModel r) =>
-      (r.data['Nombre'] ?? r.data['producto'] ?? '').toString();
+  String _nombre(Map<String, dynamic> r) =>
+      (r['Nombre'] ?? r['producto'] ?? '').toString();
 
-  double _precio(RecordModel r) {
-    final v = r.data['precio'];
+  double _precio(Map<String, dynamic> r) {
+    final v = r['precio'];
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '0') ?? 0.0;
     }
 
-  int _stock(RecordModel r) {
-    final v = r.data['cantidad'];
+  int _stock(Map<String, dynamic> r) {
+    final v = r['cantidad'];
     if (v is int) return v;
     return int.tryParse(v?.toString() ?? '0') ?? 0;
   }
 
-  String? _iconUrl(RecordModel r, {String size = '300x300'}) {
-    final file = r.data['icon'];
+  String? _iconUrl(Map<String, dynamic> r) {
+    final file = r['icon']; // En Repostería, 'icon' está en el primer nivel
     if (file == null || file.toString().isEmpty) return null;
-    return pb.files.getUrl(r, file.toString(), thumb: size).toString();
+
+    return supabase.storage
+        .from('productos') 
+        .getPublicUrl(file.toString());
   }
 
-  // ---------- Data (PB) ----------
-  // (La función _cargar ya estaba correcta, se queda igual)
+  // ---------- Data (Supabase) ----------
   Future<void> _cargar() async {
     if (!mounted) return;
     setState(() => _loading = true);
 
     try {
-      final categoriaRecord = await pb.collection('categoria').getFirstListItem('nombre = "Reposteria"');
-      final categoriaReposteriaId = categoriaRecord.id;
+      // 1. Obtener el ID de la categoría "Reposteria"
+      // .single() es el equivalente a getFirstListItem
+      final categoriaData = await supabase
+          .from('categoria')
+          .select('id')
+          .eq('nombre', 'Reposteria')
+          .single();
 
-      final res = await pb.collection('producto').getList(
-            perPage: 200,
-            filter: 'id_categoria = "$categoriaReposteriaId"',
-            sort: 'nombre',
-          );
+      final categoriaReposteriaId = categoriaData['id'];
+
+      // 2. Obtener la lista de productos
+      // Supabase devuelve directamente una List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> res = await supabase
+          .from('producto')
+          .select('*')
+          .eq('id_categoria', categoriaReposteriaId)
+          .order('nombre', ascending: true);
+
       if (!mounted) return;
       setState(() {
-        _items = res.items;
+        _items = res; // res ya es la lista de mapas
         _loading = false;
       });
     } catch (e) {
@@ -239,7 +244,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   }
 
   // ---------- Taps + reglas especiales ----------
-  void _onTapProducto(BuildContext context, RecordModel r) {
+  void _onTapProducto(BuildContext context, Map<String, dynamic> r) {
     final nombre = _nombre(r);
     final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
 
@@ -255,7 +260,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   }
 
   void _mostrarOpcionesTamanio(
-      BuildContext context, RecordModel r, double precioBase) {
+      BuildContext context, Map<String, dynamic> r, double precioBase) {
     final nombre = _nombre(r);
     showDialog(
       context: context,
@@ -279,7 +284,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   }
 
   void _mostrarOpcionesTipo(
-      BuildContext context, RecordModel r, double precioBase, String tamanio) {
+      BuildContext context, Map<String, dynamic> r, double precioBase, String tamanio) {
     final nombre = _nombre(r);
     showDialog(
       context: context,
@@ -299,7 +304,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   }
 
   void _mostrarSaboresMousse(
-      BuildContext context, RecordModel r, double precioBase) {
+      BuildContext context, Map<String, dynamic> r, double precioBase) {
     final sabores = ['Zarzamora', 'Fresa', 'Oreo', 'Guayaba', 'PiñaCoco', 'Mango'];
     showDialog(
       context: context,
@@ -320,7 +325,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
 
   // ---------- Agregar al carrito ----------
   void _agregarAlCarrito(
-      BuildContext context, RecordModel r, String nombreMostrar, double precio) {
+      BuildContext context, Map<String, dynamic> r, String nombreMostrar, double precio) {
     final imgUrl = _iconUrl(r);
     final nombreBase = _nombre(r);
     final assetFallback = 'assets/reposteria/${_slug(nombreBase)}.png';

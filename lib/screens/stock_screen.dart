@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
-import 'pb_client.dart';
+
+import './supabase_client.dart';
 
 class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
@@ -9,14 +9,14 @@ class StockScreen extends StatefulWidget {
 }
 
 class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin {
-  List<RecordModel> _categorias = [];
+  List<Map<String, dynamic>> _categorias = [];
   bool _categoriasCargadas = false;
   TabController? _tabController;
 
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  List<RecordModel> _items = []; 
-  Map<String, List<RecordModel>> _productosAgrupados = {};
+  List<Map<String, dynamic>> _items = []; 
+  Map<String, List<Map<String, dynamic>>> _productosAgrupados = {};
   
   bool _cargandoItems = true;
 
@@ -59,10 +59,15 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
 
   Future<void> _cargarCategorias() async {
     try {
-      final records = await pb.collection('categoria').getFullList(sort: 'nombre');
+      // En Supabase, .select() sin parámetros equivale a traer todas las filas y columnas
+      final List<Map<String, dynamic>> records = await supabase
+          .from('categoria')
+          .select('*')
+          .order('nombre', ascending: true);
+
       if (mounted) {
         setState(() {
-          _categorias = records;
+          _categorias = records; // Ahora es una lista de Mapas
           _categoriasCargadas = true;
         });
       }
@@ -89,58 +94,70 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
         .replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
-  void _filterAndGroupItems() {
-    List<RecordModel> filteredList;
-    if (_searchQuery.isEmpty) {
-      filteredList = List.from(_items);
-    } else {
-      final query = _normalizeText(_searchQuery);
-      filteredList = _items.where((item) {
-        final nombre = _normalizeText(_nombre(item));
-        final sku = _normalizeText(_sku(item));
-        return nombre.contains(query) || sku.contains(query);
-      }).toList();
-    }
-    
-    final Map<String, List<RecordModel>> mapa = {};
-    for (final variante in filteredList) {
-      final productoBase = _getProductoRecord(variante);
-      if (productoBase != null) {
-        (mapa[productoBase.id] ??= []).add(variante);
-      }
-    }
-    
-    setState(() {
-      _productosAgrupados = mapa;
-    });
+void _filterAndGroupItems() {
+  // 1. Cambiamos el tipo de lista a Mapas de Dart
+  List<Map<String, dynamic>> filteredList;
+  
+  if (_searchQuery.isEmpty) {
+    filteredList = List.from(_items);
+  } else {
+    final query = _normalizeText(_searchQuery);
+    filteredList = _items.where((item) {
+      // Usamos los helpers que ya adaptamos para leer mapas directamente
+      final nombre = _normalizeText(_nombre(item));
+      final sku = _normalizeText(_sku(item));
+      return nombre.contains(query) || sku.contains(query);
+    }).toList();
   }
+  
+  // 2. El mapa de agrupamiento ahora usa String como llave y una lista de Mapas como valor
+  final Map<String, List<Map<String, dynamic>>> mapa = {};
+  
+  for (final variante in filteredList) {
+    // _getProductoRecord ahora devuelve el mapa del producto (id_producto)
+    final productoBase = _getProductoRecord(variante);
+    
+    if (productoBase != null) {
+      // En Supabase/Postgres el ID suele ser 'id' (UUID o Int)
+      // Lo convertimos a String para la llave del mapa
+      final String idBase = productoBase['id'].toString();
+      
+      (mapa[idBase] ??= []).add(variante);
+    }
+  }
+  
+  setState(() {
+    _productosAgrupados = mapa;
+  });
+}
 
-  RecordModel? _getProductoRecord(RecordModel r) {
-    if (r.expand.containsKey('id_producto') && r.expand['id_producto']!.isNotEmpty) {
-      return r.expand['id_producto']!.first;
+  Map<String, dynamic>? _getProductoRecord(Map<String, dynamic> r) {
+    if (r.containsKey('id_producto') && r['id_producto']!.isNotEmpty) {
+      return r['id_producto']!.first;
     }
     return null;
   }
-  String _nombre(RecordModel r) {
+  String _nombre(Map<String, dynamic> r) {
     final producto = _getProductoRecord(r);
-    return producto?.data['nombre']?.toString() ?? 'Producto sin nombre';
+    return producto?['nombre']?.toString() ?? 'Producto sin nombre';
   }
-  String _sku(RecordModel r) => r.data['sku']?.toString() ?? '-';
-  String _categoria(RecordModel r) {
+  String _sku(Map<String, dynamic> r) => r['sku']?.toString() ?? '-';
+  String _categoria(Map<String, dynamic> r) {
     final producto = _getProductoRecord(r);
-    if (producto != null && producto.expand.containsKey('id_categoria') && producto.expand['id_categoria']!.isNotEmpty) {
-      return producto.expand['id_categoria']!.first.data['nombre']?.toString() ?? 'Sin categoría';
+    if (producto != null && producto.containsKey('id_categoria') && producto['id_categoria']!.isNotEmpty) {
+      return producto['id_categoria']!.first['nombre']?.toString() ?? 'Sin categoría';
     }
     return 'Sin categoría';
   }
-  int _cantidad(RecordModel r) => (r.data['cantidadStock'] as num?)?.toInt() ?? 0;
-  double _precio(RecordModel r) => (r.data['precio_final'] as num?)?.toDouble() ?? 0.0;
-  String? _iconUrl(RecordModel r) {
-    final producto = _getProductoRecord(r);
-    if (producto == null) return null;
-    final file = producto.data['icon'];
+  int _cantidad(Map<String, dynamic> r) => (r['cantidadStock'] as num?)?.toInt() ?? 0;
+  double _precio(Map<String, dynamic> r) => (r['precio_final'] as num?)?.toDouble() ?? 0.0;
+  String? _iconUrl(Map<String, dynamic> r) {
+    final file = r['icon']; // En Repostería, 'icon' está en el primer nivel
     if (file == null || file.toString().isEmpty) return null;
-    return pb.files.getUrl(producto, file).toString();
+
+    return supabase.storage
+        .from('productos') 
+        .getPublicUrl(file.toString());
   }
   void _mostrarError(String mensaje) {
     if (!mounted) return;
@@ -152,19 +169,38 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
   Future<void> _cargarItems({String? categoriaId}) async {
     setState(() => _cargandoItems = true);
     try {
-      final res = await pb.collection('productoVariante').getList(
-            perPage: 200,
-            filter: categoriaId == null ? '' : 'id_producto.id_categoria = "$categoriaId"',
-            sort: 'id_producto.nombre, created',
-            expand: 'id_producto,id_producto.id_categoria',
-          );
+      // 1. Construimos la consulta base
+      var query = supabase.from('productoVariante').select('''
+            *,
+            id_producto (
+              id,
+              nombre,
+              icon,
+              id_categoria (
+                id,
+                nombre
+              )
+            )
+          ''');
+
+      // 2. Aplicamos filtro condicional
+      if (categoriaId != null) {
+        // Usamos la sintaxis de puntos para filtrar por la tabla relacionada
+        query = query.eq('id_producto.id_categoria', categoriaId);
+      }
+
+      // 3. Ordenamiento (nombre del producto y luego creación)
+      final List<Map<String, dynamic>> res = await query
+          .order('nombre', referencedTable: 'id_producto')
+          .order('created_at', ascending: true);
+
       if (mounted) {
-        _items = res.items;
+        _items = res;
         _filterAndGroupItems();
         _cargandoItems = false;
       }
     } catch (e) {
-      if(mounted) {
+      if (mounted) {
         _items = [];
         _filterAndGroupItems();
         _cargandoItems = false;
@@ -176,7 +212,10 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
   void _recargarSegunTab() {
     if (_tabController == null) return;
     final index = _tabController!.index;
-    final categoriaId = index == 0 ? null : _categorias[index - 1].id;
+    
+    // Accedemos con ['id'] en lugar de .id
+    final categoriaId = index == 0 ? null : _categorias[index - 1]['id'].toString();
+    
     _cargarItems(categoriaId: categoriaId);
   }
 
@@ -214,7 +253,7 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
           isScrollable: true,
           tabs: [
             const Tab(text: 'Todos'),
-            ..._categorias.map((c) => Tab(text: c.data['nombre'].toString())),
+            ..._categorias.map((c) => Tab(text: c['nombre'].toString())),
           ],
         ),
       ),
@@ -280,7 +319,7 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     );
   }
 
-  DataTable _buildTablaVariantes(List<RecordModel> variantes) {
+  DataTable _buildTablaVariantes(List<Map<String, dynamic>> variantes) {
     return DataTable(
       columns: const [
         DataColumn(label: Text('SKU / Variante')),

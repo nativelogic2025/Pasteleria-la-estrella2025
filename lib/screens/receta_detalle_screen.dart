@@ -4,15 +4,16 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'pb_client.dart';
+
+import './supabase_client.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // --- CLASE AUXILIAR PARA MANEJAR EL ESTADO DE EDICIÓN DE INGREDIENTES ---
 class IngredienteEditable {
   String? id;
-  final RecordModel matPrim;
+  final Map<String, dynamic> matPrim;
   final TextEditingController cantidadController;
 
   IngredienteEditable({
@@ -28,7 +29,7 @@ class IngredienteEditable {
 
 // --- PANTALLA PRINCIPAL ---
 class RecetaDetalleScreen extends StatefulWidget {
-  final RecordModel receta;
+  final Map<String, dynamic> receta;
   const RecetaDetalleScreen({super.key, required this.receta});
 
   @override
@@ -54,10 +55,10 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
 
   // Ingredientes
   final _formKey = GlobalKey<FormState>();
-  late Future<List<RecordModel>> _ingredientesFuture;
+  late Future<List<Map<String, dynamic>>> _ingredientesFuture;
   final List<IngredienteEditable> _ingredientesEditables = [];
   final List<String> _idsIngredientesParaEliminar = [];
-  List<RecordModel> _materiasPrimasDisponibles = [];
+  List<Map<String, dynamic>> _materiasPrimasDisponibles = [];
 
   @override
   void initState() {
@@ -76,26 +77,63 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
     super.dispose();
   }
 
+  Future<void> _seleccionarPdf() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+      withData: true,
+    );
+
+    if (result != null && result.files.single.bytes != null) {
+      setState(() {
+        _nuevoPdfBytes = result.files.single.bytes;
+        _nuevoPdfFilename = result.files.single.name;
+      });
+    }
+  }
+
   // --- LÓGICA DE DATOS ---
   void _setPdfUrl() {
-    final pdfFileName = widget.receta.data['descripcion']?.toString();
+    // 1. Extraemos el nombre del archivo guardado en la columna 'descripcion'
+    final pdfFileName = widget.receta['descripcion']?.toString();
+
     setState(() {
       if (pdfFileName != null && pdfFileName.isNotEmpty) {
-        _pdfUrl = pb.files.getUrl(widget.receta, pdfFileName).toString();
+        // 2. Generamos la URL pública desde el bucket de Supabase
+        // Asegúrate de que el nombre del bucket coincida con el que creaste ('recetas_pdf')
+        _pdfUrl = supabase.storage
+            .from('recetas_pdf')
+            .getPublicUrl(pdfFileName);
       } else {
         _pdfUrl = null;
       }
+      
+      // 3. Forzamos la reconstrucción del visor de PDF
       _pdfViewerKey = UniqueKey();
     });
   }
 
-  Future<List<RecordModel>> _cargarIngredientes() async {
+  Future<List<Map<String, dynamic>>> _cargarIngredientes() async {
     try {
-      final records = await pb.collection('receta_matPrim').getFullList(
-            filter: 'id_receta = "${widget.receta.id}"',
-            expand: 'id_matPrim, id_matPrim.id_unidMed',
-          );
+      // 1. Realizamos la consulta con JOINS anidados
+      // id_matPrim (...) trae los datos de la materia prima
+      // id_matPrim ( id_unidMed (...) ) trae la unidad de medida dentro de la materia prima
+      final List<Map<String, dynamic>> records = await supabase
+          .from('receta_matPrim')
+          .select('''
+            *,
+            id_matPrim (
+              *,
+              id_unidMed (
+                *
+              )
+            )
+          ''')
+          .eq('id_receta', widget.receta['id']); // Acceso a mapa con ['id']
+
+      // 2. Poblamos la lista para la interfaz de edición
       _poblarListaEditable(records);
+      
       return records;
     } catch (e) {
       _mostrarError('Error al cargar ingredientes: $e');
@@ -105,28 +143,47 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
 
   Future<void> _cargarMateriasPrimas() async {
     try {
-      _materiasPrimasDisponibles =
-          await pb.collection('matPrim').getFullList(sort: 'nombre', expand: 'id_unidMed');
+      // 1. Realizamos la consulta trayendo la relación con la unidad de medida
+      final List<Map<String, dynamic>> records = await supabase
+          .from('matPrim')
+          .select('''
+            *,
+            id_unidMed (
+              *
+            )
+          ''')
+          .order('nombre', ascending: true);
+
+      // 2. Guardamos la lista de mapas en nuestra variable local
+      _materiasPrimasDisponibles = records;
+      
     } catch (e) {
       _mostrarError('No se pudieron cargar las materias primas: $e');
     }
   }
 
-  void _poblarListaEditable(List<RecordModel> records) {
+  void _poblarListaEditable(List<Map<String, dynamic>> records) {
+    // 1. Limpieza de controladores para evitar fugas de memoria
     for (var ing in _ingredientesEditables) {
       ing.dispose();
     }
     _ingredientesEditables.clear();
     _idsIngredientesParaEliminar.clear();
 
+    // 2. Procesamiento de los registros de Supabase
     for (final recordUnion in records) {
-      final matPrim = recordUnion.expand['id_matPrim']?.first;
+      // En Supabase, el objeto relacionado viene directamente como un Map
+      final matPrim = recordUnion['id_matPrim'] as Map<String, dynamic>?;
+
       if (matPrim != null) {
-        _ingredientesEditables.add(IngredienteEditable(
-          id: recordUnion.id,
-          matPrim: matPrim,
-          cantidad: (recordUnion.data['cantidad'] as num?)?.toDouble() ?? 0.0,
-        ));
+        _ingredientesEditables.add(
+          IngredienteEditable(
+            // Acceso directo a las llaves del mapa
+            id: recordUnion['id']?.toString(), 
+            matPrim: matPrim,
+            cantidad: (recordUnion['cantidad'] as num?)?.toDouble() ?? 0.0,
+          ),
+        );
       }
     }
   }
@@ -161,73 +218,88 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
     setState(() => _isEditing = !_isEditing);
   }
 
-  Future<void> _seleccionarPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-      withData: true,
-    );
-    if (result != null && result.files.single.bytes != null) {
-      setState(() {
-        _nuevoPdfBytes = result.files.single.bytes;
-        _nuevoPdfFilename = result.files.single.name;
-        _eliminarPdfActual = false;
-      });
-    }
-  }
-
   Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
     try {
       final futures = <Future>[];
-      final body = <String, dynamic>{};
+      String? nombreArchivoPdf;
 
-      if (_eliminarPdfActual) body['descripcion'] = null;
-
-      final files = <http.MultipartFile>[];
+      // 1. --- MANEJO DE ARCHIVO (PDF) ---
+      // --- MANEJO DE ARCHIVO (PDF) ---
       if (_nuevoPdfBytes != null && _nuevoPdfFilename != null) {
-        files.add(http.MultipartFile.fromBytes('descripcion', _nuevoPdfBytes!,
-            filename: _nuevoPdfFilename));
+        nombreArchivoPdf = 'receta_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        
+        await supabase.storage.from('recetas_pdf').uploadBinary(
+              nombreArchivoPdf,
+              _nuevoPdfBytes!,
+              // ✅ En las versiones actuales, usamos FileOptions así:
+              fileOptions: FileOptions(
+                contentType: 'application/pdf',
+                upsert: true,
+              ),
+            );
       }
 
-      if (body.isNotEmpty || files.isNotEmpty) {
-        final updatedReceta =
-            await pb.collection('receta').update(widget.receta.id, body: body, files: files);
-        widget.receta.data.addAll(updatedReceta.data);
+      // 2. --- ACTUALIZAR REGISTRO DE RECETA EN BASE DE DATOS ---
+      final recetaUpdateBody = <String, dynamic>{};
+      if (nombreArchivoPdf != null) recetaUpdateBody['descripcion'] = nombreArchivoPdf;
+      if (_eliminarPdfActual) recetaUpdateBody['descripcion'] = null;
+
+      if (recetaUpdateBody.isNotEmpty) {
+        await supabase
+            .from('receta')
+            .update(recetaUpdateBody)
+            .eq('id', widget.receta['id']);
+        
+        // ✨ IMPORTANTE: Actualizamos el mapa local para que la UI sepa que cambió
+        // Esto reemplaza el .addAll() que hacías en PocketBase
+        recetaUpdateBody.forEach((key, value) {
+          widget.receta[key] = value;
+        });
       }
 
+      // 3. --- MANEJO DE INGREDIENTES ---
       for (final ingrediente in _ingredientesEditables) {
         final ingBody = {
-          'id_receta': widget.receta.id,
-          'id_matPrim': ingrediente.matPrim.id,
+          'id_receta': widget.receta['id'],
+          'id_matPrim': ingrediente.matPrim['id'],
           'cantidad': double.tryParse(
                   ingrediente.cantidadController.text.replaceAll(',', '.')) ??
               0.0,
         };
+
         if (ingrediente.id != null) {
-          futures.add(pb.collection('receta_matPrim').update(ingrediente.id!, body: ingBody));
+          futures.add(supabase.from('receta_matPrim').update(ingBody).eq('id', ingrediente.id!));
         } else {
-          futures.add(pb.collection('receta_matPrim').create(body: ingBody));
+          futures.add(supabase.from('receta_matPrim').insert(ingBody));
         }
       }
 
+      // 4. --- ELIMINAR INGREDIENTES ---
       for (final id in _idsIngredientesParaEliminar) {
-        futures.add(pb.collection('receta_matPrim').delete(id));
+        futures.add(supabase.from('receta_matPrim').delete().eq('id', id));
       }
 
+      // Ejecutamos todas las operaciones de ingredientes en paralelo
       await Future.wait(futures);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Receta guardada con éxito'),
-            backgroundColor: Colors.green,
+            content: Text('Receta guardada con éxito'), 
+            backgroundColor: Colors.green
           ),
         );
+        
+        // Limpiamos variables de archivos temporales
+        _nuevoPdfBytes = null;
+        _nuevoPdfFilename = null;
+        _eliminarPdfActual = false;
+
         _toggleEditMode(cancel: true);
-        _setPdfUrl();
+        _setPdfUrl(); // Ahora usará el nombre actualizado en widget.receta['descripcion']
         _ingredientesFuture = _cargarIngredientes();
       }
     } catch (e) {
@@ -238,19 +310,25 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   }
 
   void _agregarIngrediente() async {
-    final RecordModel? matPrimSeleccionada = await showDialog(
+    final Map<String, dynamic>? matPrimSeleccionada = await showDialog(
       context: context,
       builder: (_) => _DialogoBuscarMatPrim(materiasPrimas: _materiasPrimasDisponibles),
     );
 
     if (matPrimSeleccionada != null) {
-      if (_ingredientesEditables.any((ing) => ing.matPrim.id == matPrimSeleccionada.id)) {
+      // Comparamos usando la llave ['id'] del mapa
+      if (_ingredientesEditables.any((ing) => ing.matPrim['id'] == matPrimSeleccionada['id'])) {
         _mostrarError('Este ingrediente ya está en la lista.');
         return;
       }
+      
       setState(() {
-        _ingredientesEditables
-            .add(IngredienteEditable(matPrim: matPrimSeleccionada, cantidad: 0.0));
+        _ingredientesEditables.add(
+          IngredienteEditable(
+            matPrim: matPrimSeleccionada, // matPrim ahora es un Map<String, dynamic>
+            cantidad: 0.0,
+          ),
+        );
       });
     }
   }
@@ -269,7 +347,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   // --- UI con pestañas (Solución 2) ---
   @override
   Widget build(BuildContext context) {
-    final nombreReceta = widget.receta.data['nombre']?.toString() ?? 'Detalle';
+    final nombreReceta = widget.receta['nombre']?.toString() ?? 'Detalle';
 
     return DefaultTabController(
       length: 2,
@@ -417,7 +495,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
 
   // UI de edición de PDF (subir / eliminar)
   Widget _buildPdfEditCard() {
-    final tieneActual = widget.receta.data['descripcion'] != null;
+    final tieneActual = widget.receta['descripcion'] != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -440,7 +518,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
             leading: const Icon(Icons.picture_as_pdf, color: Colors.black87),
             title: const Text('PDF actual'),
             subtitle: Text(
-              widget.receta.data['descripcion'].toString(),
+              widget.receta['descripcion'].toString(),
               overflow: TextOverflow.ellipsis,
             ),
             trailing: FilledButton.tonal(
@@ -531,9 +609,9 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
       children: List.generate(_ingredientesEditables.length, (index) {
         final ingrediente = _ingredientesEditables[index];
         final matPrim = ingrediente.matPrim;
-        final unidMed = matPrim.expand['id_unidMed']?.first;
-        final nombreIngrediente = matPrim.data['nombre'] ?? 'N/A';
-        final abreviatura = unidMed?.data['abreviatura'] ?? '-';
+        final unidMed = matPrim['id_unidMed'];
+        final nombreIngrediente = matPrim['nombre'] ?? 'N/A';
+        final abreviatura = unidMed?['abreviatura'] ?? '-';
 
         return Card(
           elevation: 1,
@@ -587,7 +665,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   }
 
   Widget _buildListaDeVista() {
-    return FutureBuilder<List<RecordModel>>(
+    return FutureBuilder<List<Map<String, dynamic>>>(
       future: _ingredientesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -610,12 +688,12 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
         final ingredientes = snapshot.data!;
         return Column(
           children: ingredientes.map((recordUnion) {
-            final matPrim = recordUnion.expand['id_matPrim']?.first;
-            final unidMed = matPrim?.expand['id_unidMed']?.first;
+            final matPrim = recordUnion['id_matPrim']?.first;
+            final unidMed = matPrim?['id_unidMed'];
             final nombreIngrediente =
-                matPrim?.data['nombre'] ?? 'Ingrediente desconocido';
+                matPrim?['nombre'] ?? 'Ingrediente desconocido';
             final cantidad =
-                (recordUnion.data['cantidad'] as num?)?.toDouble() ?? 0.0;
+                (recordUnion['cantidad'] as num?)?.toDouble() ?? 0.0;
             final abreviaturaUnidad = unidMed?.data['abreviatura'] ?? '-';
 
             return ListTile(
@@ -804,7 +882,7 @@ class _SavingOverlay extends StatelessWidget {
 // ======= D I Á L O G O   B U S C A R   M A T P R I M =======
 
 class _DialogoBuscarMatPrim extends StatefulWidget {
-  final List<RecordModel> materiasPrimas;
+  final List<Map<String, dynamic>> materiasPrimas;
   const _DialogoBuscarMatPrim({required this.materiasPrimas});
 
   @override
@@ -812,7 +890,7 @@ class _DialogoBuscarMatPrim extends StatefulWidget {
 }
 
 class _DialogoBuscarMatPrimState extends State<_DialogoBuscarMatPrim> {
-  late List<RecordModel> _resultadosFiltrados;
+  late List<Map<String, dynamic>> _resultadosFiltrados;
 
   @override
   void initState() {
@@ -823,7 +901,7 @@ class _DialogoBuscarMatPrimState extends State<_DialogoBuscarMatPrim> {
   void _filtrar(String query) {
     setState(() {
       _resultadosFiltrados = widget.materiasPrimas
-          .where((mp) => mp.data['nombre']
+          .where((mp) => mp['nombre']
               .toString()
               .toLowerCase()
               .contains(query.toLowerCase()))
@@ -859,7 +937,7 @@ class _DialogoBuscarMatPrimState extends State<_DialogoBuscarMatPrim> {
                       itemBuilder: (context, index) {
                         final mp = _resultadosFiltrados[index];
                         return ListTile(
-                          title: Text(mp.data['nombre']),
+                          title: Text(mp['nombre']),
                           onTap: () => Navigator.pop(context, mp),
                         );
                       },

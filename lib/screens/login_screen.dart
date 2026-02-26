@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Ahora leemos el rol directamente desde el Provider
       final role = userProvider.rol?.toLowerCase();
 
-      if (role == 'admin') {
+      if (role == 'administrador') {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
       } else {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
