@@ -1,40 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Importa el SDK
 
-// 1. ✨ IMPORTA los archivos necesarios
 import 'screens/splash_screen.dart';
 import 'screens/carrito.dart';
 import 'screens/carrito_provider.dart';
-import 'product_notifier.dart'; // El nuevo notificador
-import 'screens/pb_client.dart';        // Tu cliente centralizado de PocketBase
+import 'product_notifier.dart'; 
+import 'screens/supabase_client.dart';
 
-void main() {
-  // 2. ✨ CREA una instancia de nuestro notificador
+import 'screens/user_provider.dart';
+
+void main() async {
+  // 1. Obligatorio para inicializar servicios antes de runApp
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 2. Inicializamos Supabase (usa la función que creamos antes)
+  await initSupabase();
+
   final productNotifier = ProductNotifier();
 
-  // 3. ✨ ¡NOS SUSCRIBIMOS UNA SOLA VEZ AQUÍ!
-  // Esta suscripción vivirá mientras la app esté abierta.
-  try {
-    pb.collection('productos').subscribe('*', (e) {
-      // Usamos un print para confirmar en la consola que los eventos llegan
-      print('>>> Evento de Realtime recibido: ${e.action} en la colección ${e.record?.collectionName}');
-      
-      // Cuando hay un cambio, le decimos al notificador que avise a todas las pantallas.
-      productNotifier.productsHaveChanged();
-    });
-    print("✅ Suscripción a Realtime exitosa.");
-  } catch (e) {
-    print("❌ Error al suscribirse a Realtime: $e");
-  }
+  // 3. ✨ REALTIME CON SUPABASE
+  // Creamos un canal para escuchar cambios en la tabla 'productos'
+  supabase
+      .channel('public:productos') // Nombre del canal (puede ser cualquier string)
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all, // Escucha INSERT, UPDATE y DELETE
+        schema: 'public',
+        table: 'productos',
+        callback: (payload) {
+          print('>>> Evento Realtime de Supabase: ${payload.eventType}');
+          
+          // Notificamos a la app que algo cambió
+          productNotifier.productsHaveChanged();
+        },
+      )
+      .subscribe();
 
   runApp(
     MultiProvider(
       providers: [
-        // 4. ✨ AÑADE el notificador a la lista de providers
         ChangeNotifierProvider.value(value: productNotifier),
-        
-        // Tu provider del carrito se queda como estaba
         ChangeNotifierProvider(create: (_) => CarritoProvider()),
+
+        ChangeNotifierProvider(create: (_) => UserProvider()),
       ],
       child: const MyApp(),
     ),
