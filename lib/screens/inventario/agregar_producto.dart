@@ -123,19 +123,19 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
 
   // --- LÓGICA DE CARGA (SUPABASE) ---
   Future<void> _cargarProductosExistentes() async {
-    _productosExistentes = await supabase.from('producto').select('*').order('nombre');
+    _productosExistentes = await supabase.from('productos').select('*').order('nombre');
   }
   Future<void> _cargarCategorias() async {
-    _categoriasDisponibles = await supabase.from('categoria').select('*').order('nombre');
+    _categoriasDisponibles = await supabase.from('categorias').select('*').order('nombre');
   }
   Future<void> _cargarRecetas() async {
-    _recetasDisponibles = await supabase.from('receta').select('*').order('nombre');
+    _recetasDisponibles = await supabase.from('recetas').select('*').order('nombre');
   }
   Future<void> _cargarMateriasPrimas() async {
-    _materiasPrimasDisponibles = await supabase.from('matPrim').select('*, id_unidMed(*)').order('nombre');
+    _materiasPrimasDisponibles = await supabase.from('receta_ingrediente').select('*, id_ingrediente(nombre)').order('id_receta');
   }
   Future<void> _cargarUnidadesDeMedida() async {
-    _unidadesDeMedida = await supabase.from('unidMed').select('*').order('nombre');
+    _unidadesDeMedida = await supabase.from('receta_ingrediente').select('*').order('unidad_medida');
   }
 
   // --- NAVEGACIÓN ---
@@ -172,17 +172,17 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
         }
         
         // Crear Producto
-        final nuevoProd = await supabase.from('producto').insert({
+        final nuevoProd = await supabase.from('productos').insert({
           'nombre': nombreProducto, 
           'id_categoria': _categoriaSelId,
-          'icon': nombreIcono
+          'imagen_url': nombreIcono
         }).select().single();
 
         _productoBaseId = nuevoProd['id'].toString();
         _productosExistentes.add(nuevoProd);
 
         if (_recetaSelId != null) {
-          await supabase.from('producto_receta').insert({
+          await supabase.from('receta_producto').insert({
             'id_producto': _productoBaseId, 
             'id_receta': _recetaSelId
           });
@@ -212,12 +212,12 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
     
     if (_recetaSelId != null) {
       try {
-        final ingredientesBase = await supabase.from('receta_matPrim')
-            .select('*, id_matPrim(*, id_unidMed(*))')
+        final ingredientesBase = await supabase.from('receta_ingrediente')
+            .select('*, id_ingrediente(nombre)')
             .eq('id_receta', _recetaSelId!);
 
         for (final ing in ingredientesBase) {
-          final matPrim = ing['id_matPrim'] as Map<String, dynamic>?;
+          final matPrim = ing['id_ingrediente'] as Map<String, dynamic>?;
           if (matPrim != null) {
             primeraVariante.ingredientes.add(IngredienteVarianteEditable(
               matPrim: matPrim,
@@ -238,22 +238,19 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
 
     try {
       for (final variante in _variantes) {
-        final nuevaV = await supabase.from('productoVariante').insert({
+        final nuevaV = await supabase.from('producto_variantes').insert({
           'id_producto': _productoBaseId,
-          'sku': variante.skuController.text.trim(),
-          'precio_final': double.tryParse(variante.precioController.text.replaceAll(',', '.')) ?? 0.0,
-          'cantidadStock': int.tryParse(variante.stockController.text) ?? 0,
+          'precio_venta': double.tryParse(variante.precioController.text.replaceAll(',', '.')) ?? 0.0,
+          'stock': int.tryParse(variante.stockController.text) ?? 0,
         }).select().single();
         
         if (_mostrarSeccionReceta) {
           final ingInserts = variante.ingredientes.map((ing) => {
-            'id_productoVariante': nuevaV['id'],
-            'id_matPrim': ing.matPrim['id'],
-            'cantidadNecesaria': double.tryParse(ing.cantidadController.text.replaceAll(',', '.')) ?? 0.0
+            'id_variante': nuevaV['id'],
           }).toList();
           
           if (ingInserts.isNotEmpty) {
-            await supabase.from('variante_ingrediente').insert(ingInserts);
+            await supabase.from('receta_ingrediente').insert(ingInserts);
           }
         }
       }
@@ -325,8 +322,15 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
-          value: _categoriaSelId,
-          items: _categoriasDisponibles.map((c) => DropdownMenuItem(value: c['id'].toString(), child: Text(c['nombre']))).toList(),
+          // Verificamos que el ID seleccionado realmente exista en la lista cargada
+          // Si no existe (porque aún está cargando), ponemos null para evitar el crash
+          value: _categoriasDisponibles.any((c) => c['id'].toString() == _categoriaSelId) 
+              ? _categoriaSelId 
+              : null,
+          items: _categoriasDisponibles.map((c) => DropdownMenuItem(
+            value: c['id'].toString(), 
+            child: Text(c['nombre']),
+          )).toList(),
           onChanged: _onCategoryChanged,
           decoration: const InputDecoration(labelText: 'Categoría', border: OutlineInputBorder()),
         ),
@@ -340,8 +344,13 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
 
   Widget _buildSeccionReceta() {
     return DropdownButtonFormField<String>(
-      value: _recetaSelId,
-      items: _recetasDisponibles.map((r) => DropdownMenuItem(value: r['id'].toString(), child: Text(r['nombre']))).toList(),
+      value: _recetasDisponibles.any((r) => r['id'].toString() == _recetaSelId)
+          ? _recetaSelId
+          : null,
+      items: _recetasDisponibles.map((r) => DropdownMenuItem(
+        value: r['id'].toString(), 
+        child: Text(r['nombre']),
+      )).toList(),
       onChanged: (v) => setState(() => _recetaSelId = v),
       decoration: const InputDecoration(labelText: 'Receta Base', border: OutlineInputBorder()),
     );

@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 
 // Importa aquí tus pantallas externas
 import 'ventas_pasteles.dart';
-import 'ventas_postres.dart';
 import 'ventas_velas.dart';
-import 'ventas_reposteria.dart';
-import 'ventas_extras.dart';
-import 'carrito.dart'; // 👈 Importamos la nueva pantalla
+import 'ventas.dart';
+import '../carrito/carrito.dart'; // 👈 Importamos la nueva pantalla
 
 class VentasScreen extends StatelessWidget {
   const VentasScreen({super.key});
@@ -31,10 +29,10 @@ class VentasScreen extends StatelessWidget {
 
     final List<Widget> pantallas = [
       const VentasPasteles(),
-      const VentasPostres(),
-      const VentasVelas(),
-      const VentasReposteria(),
-      const VentasExtras(),
+      const Ventas(categoria: 'Postres'),
+      const Ventas(categoria: 'Velas'),
+      const Ventas(categoria: 'Repostería'),
+      const Ventas(categoria: 'Extras'),
     ];
 
     return Scaffold(

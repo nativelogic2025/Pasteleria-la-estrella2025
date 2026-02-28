@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import './supabase_client.dart';
+import '../servicios/supabase_client.dart';
 
 class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
@@ -61,7 +61,7 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     try {
       // En Supabase, .select() sin parámetros equivale a traer todas las filas y columnas
       final List<Map<String, dynamic>> records = await supabase
-          .from('categoria')
+          .from('categorias')
           .select('*')
           .order('nombre', ascending: true);
 
@@ -120,7 +120,7 @@ void _filterAndGroupItems() {
     if (productoBase != null) {
       // En Supabase/Postgres el ID suele ser 'id' (UUID o Int)
       // Lo convertimos a String para la llave del mapa
-      final String idBase = productoBase['id'].toString();
+      final String idBase = productoBase['id_producto'].toString();
       
       (mapa[idBase] ??= []).add(variante);
     }
@@ -170,14 +170,14 @@ void _filterAndGroupItems() {
     setState(() => _cargandoItems = true);
     try {
       // 1. Construimos la consulta base
-      var query = supabase.from('productoVariante').select('''
+      var query = supabase.from('producto_variantes').select('''
             *,
             id_producto (
-              id,
+              id_producto,
               nombre,
-              icon,
+              descripcion,
               id_categoria (
-                id,
+                id_categoria,
                 nombre
               )
             )
@@ -192,7 +192,7 @@ void _filterAndGroupItems() {
       // 3. Ordenamiento (nombre del producto y luego creación)
       final List<Map<String, dynamic>> res = await query
           .order('nombre', referencedTable: 'id_producto')
-          .order('created_at', ascending: true);
+          .order('creado_en', ascending: true);
 
       if (mounted) {
         _items = res;
@@ -214,7 +214,7 @@ void _filterAndGroupItems() {
     final index = _tabController!.index;
     
     // Accedemos con ['id'] en lugar de .id
-    final categoriaId = index == 0 ? null : _categorias[index - 1]['id'].toString();
+    final categoriaId = index == 0 ? null : _categorias[index - 1]['id_categoria'].toString();
     
     _cargarItems(categoriaId: categoriaId);
   }

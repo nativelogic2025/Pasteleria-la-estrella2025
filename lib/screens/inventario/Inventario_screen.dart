@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'agregar_producto.dart';
 import 'detalle_producto_general_screen.dart';
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
 // Cliente global de Supabase
 final supabase = Supabase.instance.client;
@@ -125,7 +125,7 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
 
   Future<void> _cargarCategorias() async {
     try {
-      final records = await supabase.from('categoria').select('*').order('nombre');
+      final records = await supabase.from('categorias').select('*').order('nombre');
       if (mounted) setState(() { _categorias = records; _categoriasCargadas = true; });
     } catch (e) { _mostrarError('Error categorías: $e'); }
   }
@@ -158,10 +158,10 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
     _hayCambiosProducto = false;
 
     try {
-      var queryProd = supabase.from('producto').select('*, id_categoria(*)');
+      var queryProd = supabase.from('productos').select('*, id_categoria(*)');
       if (categoriaId != null) queryProd = queryProd.eq('id_categoria', categoriaId);
 
-      var queryVar = supabase.from('productoVariante').select('*, id_producto(*, id_categoria(*))');
+      var queryVar = supabase.from('producto_variantes').select('*, id_producto(*, id_categoria(*))');
       if (categoriaId != null) queryVar = queryVar.eq('id_producto.id_categoria', categoriaId);
 
       final results = await Future.wait([queryProd.order('nombre'), queryVar]);
@@ -170,8 +170,8 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
 
       if (mounted) {
         for (final v in todasV) {
-          final id = v['id'].toString();
-          final stock = (v['cantidadStock'] as num?)?.toInt() ?? 0;
+          final id = v['id_variante'].toString();
+          final stock = (v['stock'] as num?)?.toInt() ?? 0;
           _originalStockProducto[id] = stock;
           _stockProductoCtrls[id] = TextEditingController(text: stock.toString())
             ..addListener(() {
@@ -192,7 +192,7 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
       final pBase = v['id_producto'] as Map<String, dynamic>?;
       if (pBase != null) {
         try {
-          final key = mapa.keys.firstWhere((p) => p['id'].toString() == pBase['id'].toString());
+          final key = mapa.keys.firstWhere((p) => p['id_variante'].toString() == pBase['id_producto'].toString());
           mapa[key]?.add(v);
         } catch (e) { mapa[pBase] = [v]; }
       }
@@ -209,11 +209,11 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
     _hayCambiosMateriaPrima = false;
 
     try {
-      final res = await supabase.from('matPrim').select('*, id_unidMed(*)').order('nombre');
+      final res = await supabase.from('receta_ingrediente').select('*, id_ingrediente(nombre)').order('id');
       if (mounted) {
         for (var r in res) {
           final id = r['id'].toString();
-          final stock = (r['stock'] as num?)?.toDouble() ?? 0.0;
+          final stock = (r['cantidad'] as num?)?.toDouble() ?? 0.0;
           _originalStockMateriaPrima[id] = stock;
           _stockMateriaPrimaCtrls[id] = TextEditingController(text: stock.toString())
             ..addListener(() {
@@ -266,7 +266,7 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
   // --- ACTIONS ---
   Future<void> _actualizarPrecio(Map<String, dynamic> r, double nuevo) async {
     try {
-      await supabase.from('productoVariante').update({'precio_final': nuevo}).eq('id', r['id']);
+      await supabase.from('producto_variante').update({'precio_venta': nuevo}).eq('id_variante', r['id']);
       _cargarDatosActuales();
     } catch (e) { _mostrarError('Error precio: $e'); }
   }
@@ -661,5 +661,3 @@ class _ProductoIcono extends StatelessWidget {
     return const Icon(Icons.inventory_2, size: 40);
   }
 }
-
-// (Faltan _pedirNuevoPrecio y _mostrarDialogoResumenProduccion que siguen la misma lógica de los otros diálogos migrados)

@@ -3,12 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Importa el SDK
 
 import 'screens/splash_screen.dart';
-import 'screens/carrito.dart';
-import 'screens/carrito_provider.dart';
+import 'screens/carrito/carrito.dart';
+import 'screens/carrito/carrito_provider.dart';
 import 'product_notifier.dart'; 
-import 'screens/supabase_client.dart';
+import 'screens/servicios/supabase_client.dart';
 
-import 'screens/user_provider.dart';
+import 'screens/servicios/user_provider.dart';
 
 void main() async {
   // 1. Obligatorio para inicializar servicios antes de runApp

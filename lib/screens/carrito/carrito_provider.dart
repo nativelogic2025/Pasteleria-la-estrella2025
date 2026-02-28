@@ -1,5 +1,5 @@
   import 'package:flutter/foundation.dart';
-  import 'producto.dart'; // Usamos la misma clase Producto
+  import '../ventas/producto.dart'; // Usamos la misma clase Producto
 
   class CarritoProvider with ChangeNotifier {
     final List<Producto> _productos = [];

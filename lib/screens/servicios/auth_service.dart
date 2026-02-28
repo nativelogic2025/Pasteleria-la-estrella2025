@@ -1,5 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import './supabase_client.dart'; // Importa tu cliente donde definiste 'final supabase = ...'
+import 'supabase_client.dart'; // Importa tu cliente donde definiste 'final supabase = ...'
 
 class AuthService {
   final _supabase = Supabase.instance.client;

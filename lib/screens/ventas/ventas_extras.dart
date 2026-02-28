@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 // ✨ 1. IMPORTA el nuevo notificador
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
-import 'carrito_provider.dart';
-import 'carrito.dart';
+import '../carrito/carrito_provider.dart';
+import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
-import './supabase_client.dart';
+import '../servicios/supabase_client.dart';
 
-class VentasReposteria extends StatefulWidget {
-  const VentasReposteria({super.key});
+class VentasExtras extends StatefulWidget {
+  const VentasExtras({super.key});
 
-  @override
-  State<VentasReposteria> createState() => _VentasReposteriaState();
+ @override
+  State<VentasExtras> createState() => _VentasExtrasState();
 }
 
-class _VentasReposteriaState extends State<VentasReposteria> {
+  class _VentasExtrasState extends State<VentasExtras> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   // ✨ 2. ELIMINA la variable _unsub
@@ -27,7 +27,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
   void initState() {
     super.initState();
     _cargar();
-    
+
     // ✨ 3. REEMPLAZA la suscripción con un listener al notificador
     Provider.of<ProductNotifier>(context, listen: false)
         .addListener(_onProductsChanged);
@@ -35,7 +35,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
 
   // ✨ 5. AÑADE esta función que será llamada por el notificador
   void _onProductsChanged() {
-    print(">>> Notificación recibida en VentasReposteria: Recargando productos...");
+    print(">>> Notificación recibida en VentasExtras: Recargando productos...");
     if (mounted) {
       _cargar();
     }
@@ -51,7 +51,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
 
   // ---------- Lectura de campos ----------
   String _nombre(Map<String, dynamic> r) =>
-      (r['Nombre'] ?? r['producto'] ?? '').toString();
+      (r['nombre'] ?? r['producto'] ?? '').toString();
 
   double _precio(Map<String, dynamic> r) {
     final v = r['precio'];
@@ -60,7 +60,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     }
 
   int _stock(Map<String, dynamic> r) {
-    final v = r['cantidad'];
+    final v = r['stock_total'];
     if (v is int) return v;
     return int.tryParse(v?.toString() ?? '0') ?? 0;
   }
@@ -80,37 +80,43 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     setState(() => _loading = true);
 
     try {
-      // 1. Obtener el ID de la categoría "Reposteria"
-      // .single() es el equivalente a getFirstListItem
+      // 1. Obtenemos el ID de la categoría "Extras"
+      // .single() busca un único registro que coincida
       final categoriaData = await supabase
-          .from('categoria')
-          .select('id')
-          .eq('nombre', 'Reposteria')
+          .from('categorias')
+          .select('id_categoria')
+          .eq('nombre', 'extras')
           .single();
 
-      final categoriaReposteriaId = categoriaData['id'];
+      final categoriaExtrasId = categoriaData['id_categoria'];
 
-      // 2. Obtener la lista de productos
+      // 2. Usamos ese ID para filtrar los productos en la tabla 'producto'
       // Supabase devuelve directamente una List<Map<String, dynamic>>
       final List<Map<String, dynamic>> res = await supabase
-          .from('producto')
-          .select('*')
-          .eq('id_categoria', categoriaReposteriaId)
+          .from('productos')
+          .select('''
+            *,
+            stock_total,
+            producto_variantes (
+              *
+            )
+          ''')
+          .eq('id_categoria', categoriaExtrasId)
           .order('nombre', ascending: true);
 
       if (!mounted) return;
       setState(() {
-        _items = res; // res ya es la lista de mapas
+        _items = res; // Guardamos la lista de mapas directamente
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _items = [];
+        _items = []; // Limpiamos la lista en caso de error
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar Repostería: $e')),
+        SnackBar(content: Text('Error al cargar Extras: $e')),
       );
     }
   }
@@ -121,7 +127,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Repostería'),
+        title: const Text('Extras'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -143,12 +149,12 @@ class _VentasReposteriaState extends State<VentasReposteria> {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                final visibles = _items.where((r) => _stock(r) > 0).toList();
+                final visibles = _items.where((r) => _stock(r) >= 0).toList();
 
                 if (visibles.isEmpty) {
                   return const Center(
                     child: Text(
-                      'No hay productos disponibles en Repostería',
+                      'No hay productos disponibles en Extras',
                       style: TextStyle(fontSize: 16),
                     ),
                   );
@@ -168,11 +174,10 @@ class _VentasReposteriaState extends State<VentasReposteria> {
                     alignment: WrapAlignment.center,
                     children: visibles.map((r) {
                       final nombre = _nombre(r);
-                      final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
                       final stock = _stock(r);
                       final url = _iconUrl(r);
                       final assetFallback =
-                          'assets/reposteria/${_slug(nombre)}.png';
+                          'assets/extras/${_slug(nombre)}.png';
 
                       return SizedBox(
                         width: buttonSize,
@@ -184,8 +189,8 @@ class _VentasReposteriaState extends State<VentasReposteria> {
                               child: OutlinedButton(
                                 onPressed: () => _onTapProducto(context, r),
                                 style: OutlinedButton.styleFrom(
-                                  backgroundColor: const Color.fromARGB(
-                                      255, 245, 225, 184),
+                                  backgroundColor: stock != 0 ? const Color.fromARGB(
+                                      255, 245, 225, 184) : Colors.grey,
                                   side: const BorderSide(
                                       color: Colors.black, width: 2),
                                   shape: RoundedRectangleBorder(
@@ -227,11 +232,6 @@ class _VentasReposteriaState extends State<VentasReposteria> {
                                   fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              'Stock: $stock   ·   \$${precio.toStringAsFixed(2)}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 11),
-                            ),
                           ],
                         ),
                       );
@@ -248,79 +248,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     final nombre = _nombre(r);
     final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
 
-    if (nombre == 'Tiramisú' || nombre == 'Pastel Imposible') {
-      _mostrarOpcionesTamanio(context, r, precio);
-      return;
-    }
-    if (nombre == 'Mousse') {
-      _mostrarSaboresMousse(context, r, precio);
-      return;
-    }
     _agregarAlCarrito(context, r, nombre, precio);
-  }
-
-  void _mostrarOpcionesTamanio(
-      BuildContext context, Map<String, dynamic> r, double precioBase) {
-    final nombre = _nombre(r);
-    showDialog(
-      context: context,
-      builder: (_) => SimpleDialog(
-        title: Text('Elige el tamaño de $nombre'),
-        children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
-          return SimpleDialogOption(
-            onPressed: () {
-              Navigator.pop(context);
-              if (nombre == 'Pastel Imposible') {
-                _mostrarOpcionesTipo(context, r, precioBase, tamanio);
-              } else {
-                _agregarAlCarrito(context, r, '$nombre $tamanio', precioBase);
-              }
-            },
-            child: Text(tamanio),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  void _mostrarOpcionesTipo(
-      BuildContext context, Map<String, dynamic> r, double precioBase, String tamanio) {
-    final nombre = _nombre(r);
-    showDialog(
-      context: context,
-      builder: (_) => SimpleDialog(
-        title: const Text('Selecciona tipo'),
-        children: ['Normal', 'Café'].map((tipo) {
-          return SimpleDialogOption(
-            onPressed: () {
-              Navigator.pop(context);
-              _agregarAlCarrito(context, r, '$nombre $tamanio $tipo', precioBase);
-            },
-            child: Text(tipo),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  void _mostrarSaboresMousse(
-      BuildContext context, Map<String, dynamic> r, double precioBase) {
-    final sabores = ['Zarzamora', 'Fresa', 'Oreo', 'Guayaba', 'PiñaCoco', 'Mango'];
-    showDialog(
-      context: context,
-      builder: (_) => SimpleDialog(
-        title: const Text('Elige el sabor del Mousse'),
-        children: sabores.map((sabor) {
-          return SimpleDialogOption(
-            onPressed: () {
-              Navigator.pop(context);
-              _agregarAlCarrito(context, r, 'Mousse $sabor', precioBase);
-            },
-            child: Text(sabor),
-          );
-        }).toList(),
-      ),
-    );
   }
 
   // ---------- Agregar al carrito ----------
@@ -328,7 +256,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
       BuildContext context, Map<String, dynamic> r, String nombreMostrar, double precio) {
     final imgUrl = _iconUrl(r);
     final nombreBase = _nombre(r);
-    final assetFallback = 'assets/reposteria/${_slug(nombreBase)}.png';
+    final assetFallback = 'assets/extras/${_slug(nombreBase)}.png';
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
@@ -343,6 +271,7 @@ class _VentasReposteriaState extends State<VentasReposteria> {
     );
   }
 
+  // ---------------- Formateador de nombres para imágenes ----------------
   // ---------- Utils ----------
   static String _slug(String s) {
     s = s.trim().toLowerCase();

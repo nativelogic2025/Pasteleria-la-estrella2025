@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:pos_pasteleria_la_estrella/screens/user_provider.dart';
+import 'package:pos_pasteleria_la_estrella/screens/servicios/user_provider.dart';
 import 'package:provider/provider.dart';
-import 'auth_service.dart';
-import 'menu_administrativo.dart';
-import 'menu_colaborador.dart';
+import '../servicios/auth_service.dart';
+import '../menu_administrativo.dart';
+import '../menu_colaborador.dart';
 // 👇 opcional: para ocultar los botones en versión release
 import 'package:flutter/foundation.dart' show kReleaseMode;
 

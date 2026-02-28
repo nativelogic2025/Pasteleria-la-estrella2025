@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 // ✨ 1. IMPORTA el nuevo notificador
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
-import 'carrito_provider.dart';
-import 'carrito.dart';
+import '../carrito/carrito_provider.dart';
+import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
-import './supabase_client.dart';
+import '../servicios/supabase_client.dart';
 
-class VentasExtras extends StatefulWidget {
-  const VentasExtras({super.key});
+class VentasReposteria extends StatefulWidget {
+  const VentasReposteria({super.key});
 
- @override
-  State<VentasExtras> createState() => _VentasExtrasState();
+  @override
+  State<VentasReposteria> createState() => _VentasReposteriaState();
 }
 
-  class _VentasExtrasState extends State<VentasExtras> {
+class _VentasReposteriaState extends State<VentasReposteria> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   // ✨ 2. ELIMINA la variable _unsub
@@ -27,7 +27,7 @@ class VentasExtras extends StatefulWidget {
   void initState() {
     super.initState();
     _cargar();
-
+    
     // ✨ 3. REEMPLAZA la suscripción con un listener al notificador
     Provider.of<ProductNotifier>(context, listen: false)
         .addListener(_onProductsChanged);
@@ -35,7 +35,7 @@ class VentasExtras extends StatefulWidget {
 
   // ✨ 5. AÑADE esta función que será llamada por el notificador
   void _onProductsChanged() {
-    print(">>> Notificación recibida en VentasExtras: Recargando productos...");
+    print(">>> Notificación recibida en VentasReposteria: Recargando productos...");
     if (mounted) {
       _cargar();
     }
@@ -80,37 +80,37 @@ class VentasExtras extends StatefulWidget {
     setState(() => _loading = true);
 
     try {
-      // 1. Obtenemos el ID de la categoría "Extras"
-      // .single() busca un único registro que coincida
+      // 1. Obtener el ID de la categoría "Reposteria"
+      // .single() es el equivalente a getFirstListItem
       final categoriaData = await supabase
-          .from('categoria')
-          .select('id')
-          .eq('nombre', 'Extras')
+          .from('categorias')
+          .select('id_categoria')
+          .eq('nombre', 'reposteria')
           .single();
 
-      final categoriaExtrasId = categoriaData['id'];
+      final categoriaReposteriaId = categoriaData['id_categoria'];
 
-      // 2. Usamos ese ID para filtrar los productos en la tabla 'producto'
+      // 2. Obtener la lista de productos
       // Supabase devuelve directamente una List<Map<String, dynamic>>
       final List<Map<String, dynamic>> res = await supabase
-          .from('producto')
+          .from('productos')
           .select('*')
-          .eq('id_categoria', categoriaExtrasId)
+          .eq('id_categoria', categoriaReposteriaId)
           .order('nombre', ascending: true);
 
       if (!mounted) return;
       setState(() {
-        _items = res; // Guardamos la lista de mapas directamente
+        _items = res; // res ya es la lista de mapas
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _items = []; // Limpiamos la lista en caso de error
+        _items = [];
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar Extras: $e')),
+        SnackBar(content: Text('Error al cargar Repostería: $e')),
       );
     }
   }
@@ -121,7 +121,7 @@ class VentasExtras extends StatefulWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Extras'),
+        title: const Text('Repostería'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -148,7 +148,7 @@ class VentasExtras extends StatefulWidget {
                 if (visibles.isEmpty) {
                   return const Center(
                     child: Text(
-                      'No hay productos disponibles en Extras',
+                      'No hay productos disponibles en Repostería',
                       style: TextStyle(fontSize: 16),
                     ),
                   );
@@ -172,7 +172,7 @@ class VentasExtras extends StatefulWidget {
                       final stock = _stock(r);
                       final url = _iconUrl(r);
                       final assetFallback =
-                          'assets/extras/${_slug(nombre)}.png';
+                          'assets/reposteria/${_slug(nombre)}.png';
 
                       return SizedBox(
                         width: buttonSize,
@@ -248,7 +248,79 @@ class VentasExtras extends StatefulWidget {
     final nombre = _nombre(r);
     final precio = _precio(r) <= 0 ? 50.0 : _precio(r);
 
+    if (nombre == 'Tiramisú' || nombre == 'Pastel Imposible') {
+      _mostrarOpcionesTamanio(context, r, precio);
+      return;
+    }
+    if (nombre == 'Mousse') {
+      _mostrarSaboresMousse(context, r, precio);
+      return;
+    }
     _agregarAlCarrito(context, r, nombre, precio);
+  }
+
+  void _mostrarOpcionesTamanio(
+      BuildContext context, Map<String, dynamic> r, double precioBase) {
+    final nombre = _nombre(r);
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: Text('Elige el tamaño de $nombre'),
+        children: ['Chico', 'Mediano', 'Grande'].map((tamanio) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              if (nombre == 'Pastel Imposible') {
+                _mostrarOpcionesTipo(context, r, precioBase, tamanio);
+              } else {
+                _agregarAlCarrito(context, r, '$nombre $tamanio', precioBase);
+              }
+            },
+            child: Text(tamanio),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  void _mostrarOpcionesTipo(
+      BuildContext context, Map<String, dynamic> r, double precioBase, String tamanio) {
+    final nombre = _nombre(r);
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Selecciona tipo'),
+        children: ['Normal', 'Café'].map((tipo) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              _agregarAlCarrito(context, r, '$nombre $tamanio $tipo', precioBase);
+            },
+            child: Text(tipo),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  void _mostrarSaboresMousse(
+      BuildContext context, Map<String, dynamic> r, double precioBase) {
+    final sabores = ['Zarzamora', 'Fresa', 'Oreo', 'Guayaba', 'PiñaCoco', 'Mango'];
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Elige el sabor del Mousse'),
+        children: sabores.map((sabor) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              _agregarAlCarrito(context, r, 'Mousse $sabor', precioBase);
+            },
+            child: Text(sabor),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   // ---------- Agregar al carrito ----------
@@ -256,7 +328,7 @@ class VentasExtras extends StatefulWidget {
       BuildContext context, Map<String, dynamic> r, String nombreMostrar, double precio) {
     final imgUrl = _iconUrl(r);
     final nombreBase = _nombre(r);
-    final assetFallback = 'assets/extras/${_slug(nombreBase)}.png';
+    final assetFallback = 'assets/reposteria/${_slug(nombreBase)}.png';
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
@@ -271,7 +343,6 @@ class VentasExtras extends StatefulWidget {
     );
   }
 
-  // ---------------- Formateador de nombres para imágenes ----------------
   // ---------- Utils ----------
   static String _slug(String s) {
     s = s.trim().toLowerCase();

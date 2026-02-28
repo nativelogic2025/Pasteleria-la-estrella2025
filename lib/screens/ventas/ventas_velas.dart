@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:pos_pasteleria_la_estrella/screens/supabase_client.dart';
+import 'package:pos_pasteleria_la_estrella/screens/servicios/supabase_client.dart';
 import 'package:provider/provider.dart';
-import 'carrito_provider.dart';
-import 'carrito.dart';
+import '../carrito/carrito_provider.dart';
+import '../carrito/carrito.dart';
 import 'producto.dart' as producto_model;
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
 class VentasVelas extends StatefulWidget {
   const VentasVelas({super.key});
@@ -90,28 +90,20 @@ Future<void> _cargar() async {
   try {
     // 1. Buscamos el ID de la categoría "Velas"
     final categoriaRes = await supabase
-        .from('categoria')
-        .select('id')
-        .eq('nombre', 'Velas')
+        .from('categorias')
+        .select('id_categoria')
+        .eq('nombre', 'velas')
         .single();
     
-    final categoriaVelasId = categoriaRes['id'];
+    final categoriaVelasId = categoriaRes['id_categoria'];
 
     // 2. Traemos las variantes con el JOIN de producto incluido
     // En Supabase, el "expand" se hace simplemente mencionando la tabla en el select
     final List<Map<String, dynamic>> res = await supabase
-        .from('productoVariante')
-        .select('''
-          *,
-          id_producto (
-            id,
-            nombre,
-            icon,
-            id_categoria
-          )
-        ''')
-        .eq('id_producto.id_categoria', categoriaVelasId)
-        .order('sku');
+        .from('productos')
+          .select('*')
+          .eq('id_categoria', categoriaVelasId)
+          .order('nombre', ascending: true);
 
     if (!mounted) return;
     setState(() {

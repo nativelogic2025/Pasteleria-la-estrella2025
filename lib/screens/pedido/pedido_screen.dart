@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'carrito.dart';
+import '../carrito/carrito.dart';
 
 class PedidoScreen extends StatefulWidget {
   const PedidoScreen({super.key});

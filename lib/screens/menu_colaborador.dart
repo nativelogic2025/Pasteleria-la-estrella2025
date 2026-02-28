@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'ventas_screen.dart';
-import 'pedido_screen.dart';
-import 'catalogo_screen.dart';
-import 'ver_pedidos_screen.dart';
-import 'login_screen.dart'; // 👈 Importar login
+import 'ventas/ventas_screen.dart';
+import 'pedido/pedido_screen.dart';
+import 'catalogo/catalogo_screen.dart';
+import 'ver_pedidos/ver_pedidos_screen.dart';
+import 'login/login_screen.dart'; // 👈 Importar login
 
 class MenuColaborador extends StatelessWidget {
   const MenuColaborador({super.key});

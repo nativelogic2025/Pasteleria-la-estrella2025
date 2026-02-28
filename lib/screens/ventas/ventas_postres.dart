@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 // ✨ 1. IMPORTA el nuevo notificador
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
-import 'carrito_provider.dart';
-import 'carrito.dart';
+import '../carrito/carrito_provider.dart';
+import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
-import './supabase_client.dart';
+import '../servicios/supabase_client.dart';
 
 class VentasPostres extends StatefulWidget {
   const VentasPostres({super.key});
@@ -83,20 +83,21 @@ class VentasPostres extends StatefulWidget {
       // 1. Obtenemos el ID de la categoría "Postres"
       // .single() busca un único registro que coincida
       final categoriaData = await supabase
-          .from('categoria')
-          .select('id')
-          .eq('nombre', 'Postres')
+          .from('categorias')
+          .select('id_categoria')
+          .eq('nombre', 'postres')
           .single();
 
-      final categoriaPostresId = categoriaData['id'];
+      final categoriaPostresId = categoriaData['id_categoria'];
 
       // 2. Usamos ese ID para filtrar los productos en la tabla 'producto'
       // Supabase devuelve directamente una List<Map<String, dynamic>>
       final List<Map<String, dynamic>> res = await supabase
-          .from('producto')
+          .from('productos')
           .select('*')
           .eq('id_categoria', categoriaPostresId)
           .order('nombre', ascending: true);
+          
 
       if (!mounted) return;
       setState(() {

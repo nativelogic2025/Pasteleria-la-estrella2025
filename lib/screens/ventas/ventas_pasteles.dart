@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-// ✨ 1. IMPORTA el nuevo notificador
-import '../product_notifier.dart';
+import '../../product_notifier.dart';
 
-import 'carrito_provider.dart';
-import 'carrito.dart';
+import '../carrito/carrito_provider.dart';
+import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
-import './supabase_client.dart';
+import '../servicios/supabase_client.dart';
 
 class VentasPasteles extends StatefulWidget {
   const VentasPasteles({super.key});
@@ -20,8 +19,6 @@ class VentasPasteles extends StatefulWidget {
 class _VentasPastelesState extends State<VentasPasteles> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
-  // ✨ 2. ELIMINA la variable _unsub
-  // UnsubscribeFunc? _unsub;
 
   @override
   void initState() {
@@ -83,18 +80,24 @@ class _VentasPastelesState extends State<VentasPasteles> {
       // 1. Obtenemos el ID de la categoría "Pasteles"
       // .single() busca un único registro que coincida
       final categoriaData = await supabase
-          .from('categoria')
-          .select('id')
-          .eq('nombre', 'Pasteles')
+          .from('categorias')
+          .select('id_categoria')
+          .eq('nombre', 'pasteles')
           .single();
 
-      final categoriaPastelesId = categoriaData['id'];
+      final categoriaPastelesId = categoriaData['id_categoria'];
 
       // 2. Usamos ese ID para filtrar los productos en la tabla 'producto'
       // Supabase devuelve directamente una List<Map<String, dynamic>>
       final List<Map<String, dynamic>> res = await supabase
-          .from('producto')
-          .select('*')
+          .from('productos')
+          .select('''
+            *,
+            stock_total,
+            producto_variantes (
+              *
+            )
+          ''')
           .eq('id_categoria', categoriaPastelesId)
           .order('nombre', ascending: true);
 
@@ -173,7 +176,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
                       Expanded(
                         child: _buildColumnaSabores(
                           titulo: 'Vainilla',
-                          color: const Color.fromARGB(255, 237, 233, 175),
+                          color: const Color.fromARGB(255, 237, 233, 175), 
                           productos: vainilla,
                           buttonSize: buttonSize,
                         ),
