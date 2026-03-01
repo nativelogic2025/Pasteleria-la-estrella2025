@@ -221,7 +221,9 @@ class _VentasState extends State<Ventas> {
                               width: buttonSize,
                               height: buttonSize,
                               child: OutlinedButton(
-                                onPressed: stock != 0 ? () => _onTapProducto(context, r) : null,
+                                onPressed: stock != 0 ? () => _onTapProducto(context, r) : 
+                                  () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Producto agotado')),
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: stock != 0 ? const Color.fromARGB(
                                       255, 245, 225, 184) : Colors.grey,
@@ -302,48 +304,79 @@ class _VentasState extends State<Ventas> {
       context: context,
       builder: (BuildContext dialogCtx) {
         return AlertDialog(
-          title: Text(nombreDelGrupo),
-          content: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            alignment: WrapAlignment.center,
-            children: variantesDisponibles.map((variante) {
-              final tamano = variante['tamaño']?.toString() ?? '';
-              final precio = double.tryParse(variante['precio_venta']?.toString() ?? '0') ?? 0.0;
-              final stock = variante['stock'] ?? 0;
+          title: Text(nombreDelGrupo, style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite, // Para que el diálogo no se colapse
+            child: ListView( // Cambiamos Wrap por ListView para mejor lectura en móvil
+              shrinkWrap: true,
+              children: variantesDisponibles.map((variante) {
+                final tamano = variante['tamaño']?.toString() ?? '';
+                final precio = double.tryParse(variante['precio_venta']?.toString() ?? '0') ?? 0.0;
+                final stock = variante['stock'] ?? 0;
+                final bool tieneStock = stock > 0;
 
-              return ElevatedButton(
-                onPressed: () {
-                  _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', precio);
-                  Navigator.pop(dialogCtx);
-                },
-                child: Text.rich(
-                  TextSpan(
-                    style: const TextStyle(color: Colors.black, fontSize: 16), // Estilo base
-                    children: [
-                      const TextSpan(text: "Tamaño: "),
-                      TextSpan(
-                        text: "$tamano ",
-                        style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                return Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  child: InkWell( // Hace que toda la tarjeta sea cliqueable
+                    onTap: tieneStock ? () {
+                      _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', precio);
+                      Navigator.pop(context);
+                    } : null, // Deshabilitado si no hay stock
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        children: [
+                          // Lado izquierdo: Tamaño
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(tamano, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                const SizedBox(height: 4),
+                                // Badge de Stock
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: tieneStock ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    "Stock: $stock",
+                                    style: TextStyle(
+                                      color: tieneStock ? Colors.green : Colors.red,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Lado derecho: Precio y botón
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                "\$${precio.toStringAsFixed(2)}",
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.deepPurple,
+                                ),
+                              ),
+                              if (!tieneStock)
+                                const Text("Agotado", style: TextStyle(color: Colors.red, fontSize: 10)),
+                            ],
+                          ),
+                          const Icon(Icons.chevron_right, color: Colors.grey),
+                        ],
                       ),
-                      const TextSpan(text: "Precio: "),
-                      TextSpan(
-                        text: "\$$precio ", // El \$ es para imprimir el símbolo de peso
-                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
-                      ),
-                      const TextSpan(text: "Stock: "),
-                      TextSpan(
-                        text: "$stock",
-                        style: TextStyle(
-                          color: stock > 0 ? Colors.orange : Colors.red, // ¡Incluso puedes usar lógica!
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                )
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
         );
       },
