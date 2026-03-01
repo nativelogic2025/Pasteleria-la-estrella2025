@@ -144,15 +144,15 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
     if (_currentView == InventarioView.productos) {
       if (_tabController == null) return;
       final index = _tabController!.index;
-      final catId = (index == 0) ? 0 : _categorias[index - 1]['id_categoria']?.toInt();
-      _cargarItemsProductos(catId);
+      final String? catId = (index == 0) ? null : _categorias[index - 1]['id_categoria']?.toString();
+      _cargarItemsProductos(categoriaId: catId);
     } else {
       _cargarMateriasPrimas();
     }
   }
 
-  // --- CARGA DE PRODUCTOS Y MATERIAS PRIMAS --- 
-  Future<void> _cargarItemsProductos(int categoriaId) async {
+  // --- CARGA DE PRODUCTOS Y MATERIAS PRIMAS ---
+  Future<void> _cargarItemsProductos({String? categoriaId}) async {
     setState(() => _cargando = true);
     for (var c in _stockProductoCtrls.values) c.dispose();
     _stockProductoCtrls.clear();
@@ -162,10 +162,10 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
     try {
       print(categoriaId);
       var queryProd = supabase.from('productos').select('*, id_categoria(nombre)');
-      if (categoriaId != 0) queryProd = queryProd.eq('id_categoria', categoriaId);
+      if (categoriaId != null) queryProd = queryProd.eq('id_categoria', categoriaId);
 
       var queryVar = supabase.from('producto_variantes').select('*, id_producto(id_categoria)');
-      if (categoriaId != 0) queryVar = queryVar.eq('id_producto.id_categoria', categoriaId);
+      if (categoriaId != null) queryVar = queryVar.eq('id_producto.id_categoria', categoriaId);
 
       final results = await Future.wait([queryProd.order('nombre'), queryVar]);
       final todosP = List<Map<String, dynamic>>.from(results[0]);
@@ -454,7 +454,7 @@ class _InventarioScreenState extends State<InventarioScreen> with TickerProvider
           )
         );
         // Sincronizamos la interfaz con los datos frescos de la base de datos
-        // await _cargarItemsProductos();
+        await _cargarItemsProductos();
         await _cargarMateriasPrimas(silencioso: true);
       }
     } catch (e) {
