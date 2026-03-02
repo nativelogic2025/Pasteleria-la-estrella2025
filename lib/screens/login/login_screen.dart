@@ -180,20 +180,43 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    // 👇👇👇 BOTONES TEMPORALES DE PRUEBA 👇👇👇
+                    // 👇👇👇 BOTONES TEMPORALES DE PRUEBA 👇👇👇 ACTUALIZADOS PARA INICIAR SESION CON USUARIOS DE PRUEBA
                     if (!kReleaseMode) ...[
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          const MenuAdministrativo()),
-                                );
+                              onPressed: () async {
+                                try {
+                                  final auth = AuthService();
+                                  await auth.loginUser('admin@laestrella.com', 'laestrella2026');
+
+                                  if (!mounted) return;
+
+                                  // ✨ PASO CLAVE: Usamos el Provider para cargar el rol
+                                  final userProvider = Provider.of<UserProvider>(context, listen: false);
+                                  await userProvider.refreshRole(); // Esta función ya obtiene el nombre del rol (admin/cliente)
+
+                                  if (!mounted) return;
+
+                                  // Ahora leemos el rol directamente desde el Provider
+                                  final role = userProvider.rol?.toLowerCase();
+
+                                  if (role == 'administrador') {
+                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
+                                  } else {
+                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
+                                  }
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _error = 'Error: Credenciales incorrectas o problema de conexión.';
+                                  });
+                                  print("Error detallado: $e");
+                                } finally {
+                                  if (mounted) setState(() => _loading = false);
+                                }
                               },
                               icon: const Icon(Icons.admin_panel_settings),
                               label: const Text('Entrar como Admin (debug)'),
@@ -202,12 +225,36 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const MenuColaborador()),
-                                );
+                              onPressed: () async {
+                                try {
+                                  final auth = AuthService();
+                                  await auth.loginUser('colaborador@laestrella.com', 'laestrella2026');
+
+                                  if (!mounted) return;
+
+                                  // ✨ PASO CLAVE: Usamos el Provider para cargar el rol
+                                  final userProvider = Provider.of<UserProvider>(context, listen: false);
+                                  await userProvider.refreshRole(); // Esta función ya obtiene el nombre del rol (admin/cliente)
+
+                                  if (!mounted) return;
+
+                                  // Ahora leemos el rol directamente desde el Provider
+                                  final role = userProvider.rol?.toLowerCase();
+
+                                  if (role == 'administrador') {
+                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
+                                  } else {
+                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
+                                  }
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _error = 'Error: Credenciales incorrectas o problema de conexión.';
+                                  });
+                                  print("Error detallado: $e");
+                                } finally {
+                                  if (mounted) setState(() => _loading = false);
+                                }
                               },
                               icon: const Icon(Icons.group),
                               label:
