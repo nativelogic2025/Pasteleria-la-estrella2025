@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'agregar_producto.dart';
+import 'package:flutter/services.dart'; // 👈 Esta es la línea que falta
+
+import 'dialogo_variante.dart';
+import 'dialogo_producto.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -200,6 +204,133 @@ class _InventarioScreenState extends State<InventarioScreen>
       _mostrarError('Error al eliminar producto o imagen: $e');
     }
   }
+   
+  Future<void> _agregarVarianteASupabase(String idProducto) async {
+    // 1. Abrimos el diálogo y esperamos el Mapa
+    final Map<String, dynamic>? resultado = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => DialogoAgregarVariante(
+        nombreProducto: _nombreProducto(idProducto), // El nombre que ya tienes
+        urlImagen: _imagen(idProducto),           // La imagen que ya tienes
+      ),
+    );
+
+    // 2. Si el resultado no es nulo, procedemos con Supabase
+    if (resultado != null) {
+      try {
+        // Agregamos el id_producto que no viene del diálogo
+        resultado['id_producto'] = idProducto;
+
+        await supabase.from('producto_variantes').insert(resultado);
+
+        _cargarProductos(); // Refrescar la lista de La Estrella
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Variante agregada con éxito')),
+        );
+      } catch (e) {
+        print("Error al guardar variante: $e");
+      }
+    }
+  }
+
+  Future<void> _editarProducto(String idProducto) async {
+    // 1. Abrimos el diálogo y esperamos el Mapa
+    print( "ID de producto a editar: $idProducto"); // Debug
+    print( "Nombre actual: ${_nombreProducto(idProducto)}"); // Debug
+    print( "Imagen actual: ${_imagen(idProducto)}"); // Debug
+    print( "Categoría actual: ${_categoria(idProducto)}"); // Debug
+    final Map<String, dynamic>? resultado = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => DialogoEditarProducto(
+        nombreProducto: _nombreProducto(idProducto), // El nombre que ya tienes
+        urlImagen: _imagen(idProducto),           // La imagen que ya tienes
+        categoriaInicialId: _categoria(idProducto).toString(), // La categoría que ya tienes
+        descripcion: _descripcion(idProducto), // La descripción que ya tienes
+        sabor: _sabor(idProducto), // El sabor que ya tienes
+        unidadMedida: _unidadMedida(idProducto), // La unidad de medida que ya tienes
+      ),
+    );
+
+    // 2. Si el resultado no es nulo, procedemos con Supabase
+    if (resultado != null) {
+      try {
+        setState(() => _cargando = true);
+        //print(resultado); // Debug: Ver qué datos vienen del diálogo
+
+        // 1. Extraer datos de imagen y limpiar el mapa para la DB
+        final nuevaImagenFile = resultado.remove('nueva_imagen_file');
+        final imagenBytesWeb = resultado.remove('imagen_bytes_web');
+        final bool borrarImagen = resultado.remove('borrar_imagen_servidor') ?? false;
+        final String categoriaNombre = resultado.remove('categoria_nombre') ?? '';
+        
+        // Obtenemos la URL o nombre actual antes de actualizar
+        final String? urlActual = _obtenerUrlActual(idProducto); 
+        String? nuevaUrlFinal = urlActual;
+        //print("URL actual antes de cambios: $urlActual"); // Debug
+
+        // 2. LÓGICA DE ELIMINACIÓN
+        if (borrarImagen && urlActual != null && urlActual.isNotEmpty) {
+          //print(borrarImagen ? "Usuario decidió borrar la imagen actual." : "Usuario decidió conservar la imagen actual."); // Debug
+          await supabase.storage.from('productos').remove([urlActual]);
+          nuevaUrlFinal = null;
+        }
+
+        // 3. LÓGICA DE SUBIDA (NUEVA IMAGEN)
+        if (imagenBytesWeb != null || nuevaImagenFile != null) {
+          // Si ya había una imagen, la borramos para no dejar basura en el storage
+          if (urlActual != null && urlActual.isNotEmpty) {
+            await supabase.storage.from('productos').remove([urlActual]);
+          }
+
+          final String extension = 'png'; // Puedes dinamizar esto
+          final String nombreArchivo = 'img_${DateTime.now().millisecondsSinceEpoch}.$extension';
+          String carpeta = _slug(categoriaNombre);
+
+          // Subida compatible con Web y Móvil
+          if (imagenBytesWeb != null) {
+            // Opción para Web usando bytes
+            await supabase.storage.from('productos/$carpeta').uploadBinary(
+              nombreArchivo, 
+              imagenBytesWeb,
+              fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
+            );
+          } else {
+            // Opción para Móvil usando File
+            await supabase.storage.from('productos/$carpeta').upload(
+              nombreArchivo, 
+              nuevaImagenFile,
+              fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
+            );
+          }
+          
+          nuevaUrlFinal = '$carpeta/$nombreArchivo';
+        }
+
+        //print("Nueva URL final después de cambios: $nuevaUrlFinal"); // Debug
+
+        // 4. ACTUALIZAR BASE DE DATOS
+        // Asignamos la URL final (puede ser el nombre nuevo, el viejo o null)
+        resultado['imagen_url'] = nuevaUrlFinal;
+
+        //print("Datos a actualizar en DB: $resultado"); // Debug
+
+        await supabase.from('productos').update(resultado).eq('id_producto', idProducto);
+
+        await _cargarProductos(); 
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Producto actualizado con éxito'), backgroundColor: Colors.green),
+          );
+        }
+      } catch (e) {
+        print("Error al guardar producto: $e");
+        _mostrarError("Error crítico: $e");
+      } finally {
+        if (mounted) setState(() => _cargando = false);
+      }
+    }
+  }
+
   // ---------------------- FIN BD -------------------------
 
   // --------------------- FUNCIONES --------------------------
@@ -258,20 +389,11 @@ class _InventarioScreenState extends State<InventarioScreen>
 
     // Si el usuario confirmó, ejecutamos la lógica de borrado en Supabase
     if (confirmar == true) {
-      await _eliminarProducto(idProducto, urlImagen);
+      await _eliminarProducto(idProducto, _obtenerUrlActual(idProducto));
     }
   }
 
   // Función para obtener la URL pública de la imagen desde Supabase Storage
-  String? _iconUrl(Map<String, dynamic> r) {
-    final file = r['imagen_url']; // En Repostería, 'icon' está en el primer nivel
-    if (file == null || file.toString().isEmpty) return null;
-
-    return supabase.storage
-        .from('productos') 
-        .getPublicUrl(file.toString());
-  }
-  
   String _imagen(String idProducto) {
     final producto = _productos
         .firstWhere((p) => p['id_producto'].toString() == idProducto);
@@ -282,8 +404,7 @@ class _InventarioScreenState extends State<InventarioScreen>
         .from('productos') 
         .getPublicUrl(producto['imagen_url'].toString());
   }
-  // ---------------------- FIN FUNCIONES --------------------------
-
+  
   void _mostrarError(String mensaje) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(mensaje), backgroundColor: Colors.red),
@@ -300,7 +421,57 @@ class _InventarioScreenState extends State<InventarioScreen>
     return producto['nombre'] ?? 'Sin nombre';
   }
 
-  
+  String _categoria(String idProducto) {
+    final producto = _productos.firstWhere(
+      (p) => p['id_producto'].toString() == idProducto,
+      orElse: () => {}, // Evita errores si no encuentra el producto
+    );
+
+    // Convertimos el int a String y manejamos el nulo
+    return producto['id_categoria']?.toString() ?? ''; 
+  }
+
+  String _descripcion(String idProducto) {
+    final producto = _productos.firstWhere(
+      (p) => p['id_producto'].toString() == idProducto,
+      orElse: () => {}, // Evita errores si no encuentra el producto
+    );
+
+    // Convertimos el int a String y manejamos el nulo
+    return producto['descripcion']?.toString() ?? ''; 
+  }
+
+  String _sabor(String idProducto) {
+    final producto = _productos.firstWhere(
+      (p) => p['id_producto'].toString() == idProducto,
+      orElse: () => {}, // Evita errores si no encuentra el producto
+    );
+
+    // Convertimos el int a String y manejamos el nulo
+    return producto['sabor']?.toString() ?? ''; 
+  }
+
+  String _unidadMedida(String idProducto) {
+    final producto = _productos.firstWhere(
+      (p) => p['id_producto'].toString() == idProducto,
+      orElse: () => {}, // Evita errores si no encuentra el producto
+    );
+
+    // Convertimos el int a String y manejamos el nulo
+    return producto['unidad_medida']?.toString() ?? ''; 
+  }
+
+  String _obtenerUrlActual(String idProducto) {
+    final producto = _productos.firstWhere(
+      (p) => p['id_producto'].toString() == idProducto,
+      orElse: () => {}, // Evita errores si no encuentra el producto
+    );
+
+    // Convertimos el int a String y manejamos el nulo
+    return producto['imagen_url']?.toString() ?? ''; 
+  }
+
+  // ---------------------- FIN FUNCIONES --------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +528,8 @@ class _InventarioScreenState extends State<InventarioScreen>
                     icon: const Icon(Icons.edit, color: Colors.blue),
                     onPressed: () {
                       // Aquí tu acción
-                      print("Editar producto $idProducto");
+                      // print("Editar producto $idProducto");
+                      _editarProducto(idProducto);
                     },
                   ),
                   IconButton(
@@ -365,7 +537,7 @@ class _InventarioScreenState extends State<InventarioScreen>
                     icon: const Icon(Icons.add),
                     onPressed: () {
                       // Aquí tu acción
-                      print("Agregar variante a $idProducto");
+                      _agregarVarianteASupabase(idProducto);
                     },
                   ),
                 ],
@@ -424,46 +596,45 @@ class _InventarioScreenState extends State<InventarioScreen>
 
                                       final nuevo =
                                           await showDialog<double>(
-                                        context: context,
-                                        builder: (_) =>
-                                            AlertDialog(
-                                          title: const Text(
-                                              'Actualizar precio'),
-                                          content: TextField(
-                                            controller: controller,
-                                            keyboardType:
-                                                const TextInputType
-                                                    .numberWithOptions(
-                                                    decimal: true),
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(
-                                                        context),
-                                                child: const Text(
-                                                    'Cancelar')),
-                                            FilledButton(
-                                              onPressed: () {
-                                                final v =
-                                                    double.tryParse(
-                                                        controller
-                                                            .text);
-                                                if (v != null) {
-                                                  Navigator.pop(
-                                                      context, v);
-                                                }
-                                              },
-                                              child:
-                                                  const Text('Guardar'),
-                                            )
-                                          ],
-                                        ),
-                                      );
+                                            context: context,
+                                            builder: (_) =>
+                                              AlertDialog(
+                                                title: const Text(
+                                                    'Actualizar precio'),
+                                                content: TextField(
+                                                  controller: controller,
+                                                  keyboardType:
+                                                      const TextInputType
+                                                          .numberWithOptions(
+                                                          decimal: true),
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              context),
+                                                      child: const Text(
+                                                          'Cancelar')),
+                                                  FilledButton(
+                                                    onPressed: () {
+                                                      final v =
+                                                          double.tryParse(
+                                                              controller
+                                                                  .text);
+                                                      if (v != null) {
+                                                        Navigator.pop(
+                                                            context, v);
+                                                      }
+                                                    },
+                                                    child:
+                                                        const Text('Guardar'),
+                                                  )
+                                                ],
+                                              ),
+                                          );
 
                                       if (nuevo != null) {
-                                        _actualizarPrecio(
-                                            v, nuevo);
+                                        _actualizarPrecio(v, nuevo);
                                       }
                                     },
                                   )
@@ -492,5 +663,15 @@ class _InventarioScreenState extends State<InventarioScreen>
             )
           : null,
     );
+  }
+
+  static String _slug(String s) {
+    s = s.trim().toLowerCase();
+    const from = 'áéíóúüñ';
+    const to =   'aeiouun';
+    for (int i = 0; i < from.length; i++) {
+      s = s.replaceAll(from[i], to[i]);
+    }
+    return s.replaceAll(' ', '_');
   }
 }

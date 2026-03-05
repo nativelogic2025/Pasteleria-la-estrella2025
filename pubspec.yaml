@@ -50,6 +50,7 @@ dependencies:
   # ✨ Paquete para abrir URLs
   url_launcher: ^6.2.6 
   confetti: ^0.7.0
+  image_picker: ^1.0.7
 
 
 dev_dependencies:
