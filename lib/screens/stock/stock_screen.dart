@@ -168,7 +168,7 @@ void _filterAndGroupItems() {
   int _cantidad(Map<String, dynamic> r) => (r['cantidadStock'] as num?)?.toInt() ?? 0;
   double _precio(Map<String, dynamic> r) => (r['precio_final'] as num?)?.toDouble() ?? 0.0;
   String? _iconUrl(Map<String, dynamic> r) {
-    final file = r['icon']; // En Repostería, 'icon' está en el primer nivel
+    final file = r['imagen_url']; // En Repostería, 'icon' está en el primer nivel
     if (file == null || file.toString().isEmpty) return null;
 
     return supabase.storage
