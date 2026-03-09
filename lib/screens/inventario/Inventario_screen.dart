@@ -160,16 +160,24 @@ class _InventarioScreenState extends State<InventarioScreen>
     }
   }
 
-  Future<void> _eliminarVariante(Map<String, dynamic> variante) async {
+  Future<bool> _eliminarVariante(Map<String, dynamic> variante) async {
     try {
+      // 1. Ejecutamos la eliminación en la tabla producto_variantes
       await supabase
           .from('producto_variantes')
           .delete()
           .eq('id_variante', variante['id_variante']);
 
-      _cargarProductos();
+      // 2. Refrescamos la lista local para que el cambio se vea en el inventario
+      await _cargarProductos(); 
+
+      // Retornamos true para indicar éxito al diálogo
+      return true; 
+      
     } catch (e) {
-      _mostrarError('Error al eliminar: $e');
+      // En caso de error, lo imprimimos y retornamos false
+      debugPrint('Error al eliminar variante: $e');
+      return false;
     }
   }
 
@@ -640,12 +648,86 @@ class _InventarioScreenState extends State<InventarioScreen>
                                   )
                                 ],
                               )),
-                              DataCell(IconButton(
-                                icon: const Icon(Icons.delete,
-                                    color: Colors.red),
-                                onPressed: () =>
-                                    _eliminarVariante(v),
-                              )),
+                              DataCell(
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () async {
+                                    // 1. Ejecutamos el diálogo con estado de carga integrado
+                                    final bool? eliminadoExitoso = await showDialog<bool>(
+                                      context: context,
+                                      barrierDismissible: false, // Obliga a esperar la respuesta de la DB
+                                      builder: (context) {
+                                        bool eliminando = false; // Estado local para el círculo de carga
+
+                                        return StatefulBuilder(
+                                          builder: (context, setStateInside) {
+                                            return AlertDialog(
+                                              title: Text(eliminando ? 'Procesando...' : '¿Eliminar variante?'),
+                                              content: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (eliminando)
+                                                    const SizedBox(
+                                                      height: 80,
+                                                      child: Center(child: CircularProgressIndicator()),
+                                                    )
+                                                  else
+                                                    Text('Estás a punto de eliminar una variante de "${_nombreProducto(idProducto)}". Esta acción es irreversible.'),
+                                                ],
+                                              ),
+                                              actions: eliminando
+                                                  ? [] // Sin botones mientras se borra en Supabase
+                                                  : [
+                                                      TextButton(
+                                                        onPressed: () => Navigator.pop(context, null),
+                                                        child: const Text('CANCELAR'),
+                                                      ),
+                                                      FilledButton(
+                                                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                                        onPressed: () async {
+                                                          // Cambiamos a estado de carga
+                                                          setStateInside(() => eliminando = true);
+                                                          
+                                                          // 2. Llamamos a tu función de Supabase
+                                                          final resultado = await _eliminarVariante(v);
+                                                          
+                                                          if (context.mounted) {
+                                                            // Cerramos el diálogo devolviendo true o false
+                                                            Navigator.pop(context, resultado);
+                                                          }
+                                                        },
+                                                        child: const Text('ELIMINAR'),
+                                                      ),
+                                                    ],
+                                            );
+                                          },
+                                        );
+                                      },
+                                    );
+
+                                    // 3. Feedback visual final con SnackBar
+                                    if (eliminadoExitoso == true) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Variante eliminada con éxito'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                    } else if (eliminadoExitoso == false) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Error al eliminar la variante'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
                             ]);
                           }).toList(),
                         ),

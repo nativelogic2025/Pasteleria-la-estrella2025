@@ -132,8 +132,8 @@ void _filterAndGroupItems() {
 }
 
   Map<String, dynamic>? _getProductoRecord(Map<String, dynamic> r) {
-    if (r.containsKey('id_producto') && r['id_producto']!.isNotEmpty) {
-      return r['id_producto']!.first;
+    if (r.containsKey('id_producto')) {
+      return r;
     }
     return null;
   }
@@ -144,9 +144,25 @@ void _filterAndGroupItems() {
   String _sku(Map<String, dynamic> r) => r['sku']?.toString() ?? '-';
   String _categoria(Map<String, dynamic> r) {
     final producto = _getProductoRecord(r);
-    if (producto != null && producto.containsKey('id_categoria') && producto['id_categoria']!.isNotEmpty) {
-      return producto['id_categoria']!.first['nombre']?.toString() ?? 'Sin categoría';
+    
+    if (producto != null && producto.containsKey('id_categoria')) {
+      final cat = producto['id_categoria'];
+      
+      // Si 'id_categoria' es un Mapa (porque hiciste un join en la select)
+      if (cat is Map) {
+        return cat['nombre']?.toString() ?? 'Sin categoría';
+      }
+      
+      // Si 'id_categoria' es solo el ID (como el número 18 que vimos)
+      // Buscamos el nombre en nuestra lista local de _categorias
+      final categoriaEncontrada = _categorias.firstWhere(
+        (c) => c['id_categoria'].toString() == cat.toString(),
+        orElse: () => {},
+      );
+
+      return categoriaEncontrada['nombre']?.toString() ?? 'Sin categoría';
     }
+    
     return 'Sin categoría';
   }
   int _cantidad(Map<String, dynamic> r) => (r['cantidadStock'] as num?)?.toInt() ?? 0;
@@ -170,29 +186,17 @@ void _filterAndGroupItems() {
     setState(() => _cargandoItems = true);
     try {
       // 1. Construimos la consulta base
-      var query = supabase.from('producto_variantes').select('''
-            *,
-            id_producto (
-              id_producto,
-              nombre,
-              descripcion,
-              id_categoria (
-                id_categoria,
-                nombre
-              )
-            )
-          ''');
+      var query = supabase.from('productos').select('*');
 
       // 2. Aplicamos filtro condicional
       if (categoriaId != null) {
         // Usamos la sintaxis de puntos para filtrar por la tabla relacionada
-        query = query.eq('id_producto.id_categoria', categoriaId);
+        query = query.eq('id_categoria', categoriaId);
       }
 
       // 3. Ordenamiento (nombre del producto y luego creación)
       final List<Map<String, dynamic>> res = await query
-          .order('nombre', referencedTable: 'id_producto')
-          .order('creado_en', ascending: true);
+          .order('nombre');
 
       if (mounted) {
         _items = res;
