@@ -419,8 +419,12 @@ class _InventarioScreenState extends State<InventarioScreen>
     );
   }
 
-  double _precio(Map<String, dynamic> v) {
+  double _precioVenta(Map<String, dynamic> v) {
     return (v['precio_venta'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  double _precioCosto(Map<String, dynamic> v) {
+    return (v['precio_costo'] as num?)?.toDouble() ?? 0.0;
   }
 
   String _nombreProducto(String idProducto) {
@@ -573,7 +577,8 @@ class _InventarioScreenState extends State<InventarioScreen>
                             DataColumn(label: Text('Eliminar')),
                           ],
                           rows: variantes.map((v) {
-                            final precio = _precio(v);
+                            final precioVenta = _precioVenta(v);
+                            final precioCosto = _precioCosto(v);
 
                             return DataRow(cells: [
                               DataCell(Text(v['tamaño'] ?? '-')),
@@ -583,14 +588,14 @@ class _InventarioScreenState extends State<InventarioScreen>
                               DataCell(Row(
                                 children: [
                                   Text(
-                                      '\$${precio.toStringAsFixed(2)}'),
+                                      '\$${precioVenta.toStringAsFixed(2)}'),
                                   IconButton(
                                     icon: const Icon(Icons.edit,
                                         size: 18),
                                     onPressed: () async {
                                       final controller =
                                           TextEditingController(
-                                              text: precio
+                                              text: precioVenta
                                                   .toStringAsFixed(2));
 
                                       final nuevo =
@@ -639,7 +644,7 @@ class _InventarioScreenState extends State<InventarioScreen>
                                   )
                                 ],
                               )),
-                              DataCell(Text(v['precio_costo'].toString() ?? '-')),
+                              DataCell(Text('\$${precioCosto.toStringAsFixed(2)}')),
                               DataCell(Text(v['porciones'].toString() ?? '-')),
                               DataCell(Text(v['peso_estimado'].toString() ?? '-')),
                               DataCell(Text(v['stock_minimo'].toString() ?? '-')),

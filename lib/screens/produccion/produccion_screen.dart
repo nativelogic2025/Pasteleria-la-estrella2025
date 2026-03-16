@@ -23,6 +23,11 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
   
   bool _cargandoItems = true;
 
+  // --- VARIABLES PARA EL FILTRO ---
+  DateTime _fechaInicio = DateTime.now().subtract(const Duration(days: 7));
+  DateTime _fechaFin = DateTime.now().add(const Duration(days: 7));
+  bool _soloConStock = false;
+
   @override
   void initState() {
     super.initState();
@@ -80,26 +85,45 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
   }
 
   Future<void> _agregarProduccionASupabase() async {
-    // 1. Abrimos el diálogo y esperamos el Mapa
-    final Map<String, dynamic>? resultado = await showDialog<Map<String, dynamic>>(
+    // 1. Ahora esperamos una LISTA de mapas
+    final List<Map<String, dynamic>>? resultados = await showDialog<List<Map<String, dynamic>>>(
       context: context,
-      builder: (context) => DialogoRegistrarProduccion(),
+      barrierDismissible: false,
+      builder: (context) => const DialogoRegistrarProduccion(),
     );
 
-    // 2. Si el resultado no es nulo, procedemos con Supabase
-    if (resultado != null) {
+    // 2. Si hay resultados y la lista no está vacía
+    if (resultados != null && resultados.isNotEmpty) {
       try {
-        // Agregamos el id_producto que no viene del diálogo
-        // resultado['id_producto'] = idProducto;
+        // 3. Limpiamos los datos visuales antes de mandarlos a la BD
+        // Solo enviamos las columnas que realmente existen en tu tabla de Supabase
+        final datosParaInsertar = resultados.map((r) {
+          return {
+            "id_producto": r['id_producto'],
+            "id_variante": r['id_variante'], // El UUID o int de la variante
+            "cantidad_original": r['cantidad'],
+            "cantidad_restante": r['cantidad'],
+            "fecha_produccion": r['fecha_produccion'],
+            "fecha_caducidad": r['fecha_caducidad'],
+          };
+        }).toList();
 
-        await supabase.from('producto_variantes').insert(resultado);
+        print(datosParaInsertar);
 
-        // _cargarProductos(); // Refrescar la lista de La Estrella
+        // 4. Insertamos toda la lista a la vez. 
+        await supabase.from('produccion').insert(datosParaInsertar);
+
+        _recargarSegunTab();
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Variante agregada con éxito')),
+          SnackBar(content: Text('${resultados.length} registros guardados con éxito')),
         );
+        
       } catch (e) {
-        print("Error al guardar variante: $e");
+        print("Error al guardar producción: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
@@ -123,39 +147,158 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
   }
 
   void _filterAndGroupItems() {
-    // 1. Cambiamos el tipo de lista a Mapas de Dart
-    List<Map<String, dynamic>> filteredList;
-    
-    if (_searchQuery.isEmpty) {
-      filteredList = List.from(_items);
-    } else {
-      final query = _normalizeText(_searchQuery);
-      filteredList = _items.where((item) {
-        // Usamos los helpers que ya adaptamos para leer mapas directamente
-        final nombre = _normalizeText(_nombre(item));
-        return nombre.contains(query);
-      }).toList();
-    }
-  
-    // 2. El mapa de agrupamiento ahora usa String como llave y una lista de Mapas como valor
     final Map<String, List<Map<String, dynamic>>> mapa = {};
-    
-    for (final variante in filteredList) {
-      // _getProductoRecord ahora devuelve el mapa del producto (id_producto)
-      final productoBase = _getProductoRecord(variante);
-      
-      if (productoBase != null) {
-        // En Supabase/Postgres el ID suele ser 'id' (UUID o Int)
-        // Lo convertimos a String para la llave del mapa
-        final String idBase = productoBase['id_producto'].toString();
+    final query = _normalizeText(_searchQuery);
+
+    for (final producto in _items) {
+      // 1. Filtro de búsqueda por texto
+      final nombreProd = _normalizeText(_nombre(producto));
+      if (_searchQuery.isNotEmpty && !nombreProd.contains(query)) {
+        continue; // Si no coincide el texto, saltamos al siguiente producto
+      }
+
+      // 2. FILTRADO PROFUNDO (Variantes y Producción)
+      List<dynamic> variantesOriginales = producto['producto_variantes'] ?? [];
+      List<Map<String, dynamic>> variantesFiltradas = [];
+
+      for (var v in variantesOriginales) {
+        List<dynamic> produccionesOriginales = v['produccion'] ?? [];
+        List<Map<String, dynamic>> produccionesFiltradas = [];
+
+        for (var p in produccionesOriginales) {
+          // A. Filtrar por Fechas
+          DateTime? fechaProd = DateTime.tryParse(p['fecha_produccion'] ?? '');
+          if (fechaProd == null) continue;
+
+          // Normalizamos las fechas para ignorar horas y comparar solo los días
+          DateTime fProdOnly = DateTime(fechaProd.year, fechaProd.month, fechaProd.day);
+          DateTime fIniOnly = DateTime(_fechaInicio.year, _fechaInicio.month, _fechaInicio.day);
+          DateTime fFinOnly = DateTime(_fechaFin.year, _fechaFin.month, _fechaFin.day);
+
+          bool enRango = !fProdOnly.isBefore(fIniOnly) && !fProdOnly.isAfter(fFinOnly);
+
+          // B. Filtrar por Stock
+          int stockRestante = p['cantidad_restante'] ?? 0;
+          bool stockOk = _soloConStock ? stockRestante > 0 : true;
+
+          // Si cumple ambos filtros, lo agregamos a las producciones válidas
+          if (enRango && stockOk) {
+            produccionesFiltradas.add(Map<String, dynamic>.from(p));
+          }
+        }
+
+        // Si la variante tiene al menos una producción válida, la conservamos
+        if (produccionesFiltradas.isNotEmpty) {
+          Map<String, dynamic> vClon = Map<String, dynamic>.from(v);
+          vClon['produccion'] = produccionesFiltradas; // Le asignamos solo lo filtrado
+          variantesFiltradas.add(vClon);
+        }
+      }
+
+      // 3. Si el producto sobrevivió a los filtros con al menos una variante
+      if (variantesFiltradas.isNotEmpty) {
+        Map<String, dynamic> pClon = Map<String, dynamic>.from(producto);
+        pClon['producto_variantes'] = variantesFiltradas;
         
-        (mapa[idBase] ??= []).add(variante);
+        // Lo agrupamos (la lógica que ya tenías)
+        final String idBase = pClon['id_producto'].toString();
+        (mapa[idBase] ??= []).add(pClon);
       }
     }
-    
+
     setState(() {
       _productosAgrupados = mapa;
     });
+  }
+
+  String _formatDate(DateTime date) {
+    return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().substring(2)}";
+  }
+
+  Future<void> _seleccionarFecha(bool isInicio) async {
+    final initialDate = isInicio ? _fechaInicio : _fechaFin;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(primary: Color.fromARGB(255, 165, 106, 224)),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isInicio) {
+          _fechaInicio = picked;
+          if (_fechaInicio.isAfter(_fechaFin)) _fechaFin = _fechaInicio; // Autocorrección
+        } else {
+          _fechaFin = picked;
+          if (_fechaFin.isBefore(_fechaInicio)) _fechaInicio = _fechaFin; // Autocorrección
+        }
+        _filterAndGroupItems(); // Disparamos el filtro al cambiar la fecha
+      });
+    }
+  }
+
+  // --- WIDGET DE LA BARRA DE FILTROS ---
+  Widget _buildFiltrosDerecha() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FilterChip(
+          label: const Text('Stock > 0', style: TextStyle(fontSize: 13)),
+          selected: _soloConStock,
+          showCheckmark: false,
+          selectedColor: const Color.fromARGB(150, 236, 231, 131),
+          onSelected: (val) {
+            setState(() {
+              _soloConStock = val;
+              _filterAndGroupItems();
+            });
+          },
+        ),
+        const SizedBox(width: 12),
+        InkWell(
+          onTap: () => _seleccionarFecha(true),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today, size: 16, color: Colors.black87),
+                const SizedBox(width: 6),
+                Text(_formatDate(_fechaInicio), style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8.0),
+          child: Text("-", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+        ),
+        InkWell(
+          onTap: () => _seleccionarFecha(false),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.event, size: 16, color: Colors.black87),
+                const SizedBox(width: 6),
+                Text(_formatDate(_fechaFin), style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16), // Espacio final
+      ],
+    );
   }
 
   Map<String, dynamic>? _getProductoRecord(Map<String, dynamic> r) {
@@ -312,13 +455,29 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
             ),
           ],
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: [
-            const Tab(text: 'Todos'),
-            ..._categorias.map((c) => Tab(text: c['nombre'].toString())),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(50.0),
+          child: Row(
+            children: [
+              // El TabBar envuelto en Expanded para que tome todo el espacio izquierdo
+              Expanded(
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabs: [
+                    const Tab(text: 'Todos'),
+                    ..._categorias.map((c) => Tab(text: c['nombre'].toString())),
+                  ],
+                ),
+              ),
+              // Separador visual
+              Container(height: 30, width: 1, color: Colors.grey[300]),
+              const SizedBox(width: 8),
+              
+              // Los nuevos filtros incrustados a la derecha
+              _buildFiltrosDerecha(),
+            ],
+          ),
         ),
       ),
       body: _cargandoItems
@@ -389,6 +548,7 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
         // DataColumn(label: Text('Producto')),
         DataColumn(label: Text('Variante')),
         DataColumn(label: Text('Cantidad Producida')),
+        DataColumn(label: Text('Cantidad Disponible')),
         DataColumn(label: Text('Fecha Producción')),
         DataColumn(label: Text('Fecha Caducidad')),
       ],
@@ -413,7 +573,14 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
                 // Datos específicos del registro de PRODUCCIÓN
                 DataCell(
                   Text(
-                    '${produccion['cantidad'] ?? 0} pzas', 
+                    '${produccion['cantidad_original'] ?? 0} pzas', 
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                DataCell(
+                  Text(
+                    '${produccion['cantidad_restante'] ?? 0} pzas', 
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),

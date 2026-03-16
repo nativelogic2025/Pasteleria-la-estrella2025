@@ -5,10 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 final supabase = Supabase.instance.client;
 
 class DialogoRegistrarProduccion extends StatefulWidget {
-
-  const DialogoRegistrarProduccion({
-    super.key,
-  });
+  const DialogoRegistrarProduccion({super.key});
 
   @override
   State<DialogoRegistrarProduccion> createState() => _DialogoRegistrarProduccionState();
@@ -18,22 +15,16 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
   // 1. LLAVE PARA VALIDAR EL FORMULARIO
   final _formKey = GlobalKey<FormState>();
 
-  // 2. CONTROLADORES PARA CAPTURAR EL TEXTO
-  final _tamanoCtrl = TextEditingController();
-  final _precioVentaCtrl = TextEditingController();
-  final _precioCostoCtrl = TextEditingController();
-  final _stockCtrl = TextEditingController();
-  final _porcionesCtrl = TextEditingController();
-  final _pesoCtrl = TextEditingController();
-  final _minCtrl = TextEditingController();
-  final _maxCtrl = TextEditingController();
+  // 2. CONTROLADORES ESTRICTAMENTE NECESARIOS
+  final _cantidadCtrl = TextEditingController();
   final _fechaProduccionCtrl = TextEditingController();
   final _fechaCaducidadCtrl = TextEditingController();
 
   String? _productoSelId;
   String? _varianteSelId;
+  
   List<Map<String, dynamic>> _variantesFiltradas = [];
-
+  List<Map<String, dynamic>> _produccionesTemp = [];
   List<Map<String, dynamic>> _variantes = [];
   List<Map<String, dynamic>> _productos = [];
 
@@ -48,11 +39,8 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
   Future<void> _inicializar() async {
     setState(() => _cargando = true);
     try {
-      _variantes =
-          await supabase.from('producto_variantes').select('*').order('tamaño');
-
-      _productos =
-          await supabase.from('productos').select('*').order('nombre');
+      _variantes = await supabase.from('producto_variantes').select('*').order('tamaño');
+      _productos = await supabase.from('productos').select('*').order('nombre');
     } catch (e) {
       _mostrarError('Error al cargar datos: $e');
     } finally {
@@ -69,216 +57,271 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
 
   @override
   void dispose() {
-    // Limpieza de memoria
-    _tamanoCtrl.dispose();
-    _precioVentaCtrl.dispose();
-    _precioCostoCtrl.dispose();
-    _stockCtrl.dispose();
-    _porcionesCtrl.dispose();
-    _pesoCtrl.dispose();
-    _minCtrl.dispose();
-    _maxCtrl.dispose();
+    // Limpieza de memoria solo de los controladores usados
+    _cantidadCtrl.dispose();
     _fechaProduccionCtrl.dispose();
+    _fechaCaducidadCtrl.dispose();
     super.dispose();
+  }
+
+  // Dentro de _DialogoRegistrarProduccionState
+  void _agregarProduccion() {
+    if (!_formKey.currentState!.validate()) return;
+    if (_productoSelId == null || _varianteSelId == null) return;
+
+    setState(() {
+      _produccionesTemp.add({
+        // -- Datos para mostrar en la tabla visual --
+        "producto_nombre": _productos.firstWhere((p) => p['id_producto'].toString() == _productoSelId)['nombre'],
+        "variante_nombre": _variantesFiltradas.firstWhere((v) => v['id_variante'].toString() == _varianteSelId)['tamaño'],
+        
+        // -- Datos reales que enviaremos a Supabase --
+        "id_producto": _productoSelId, 
+        "id_variante": _varianteSelId,
+        "cantidad": int.parse(_cantidadCtrl.text),
+        "fecha_produccion": _fechaProduccionCtrl.text,
+        "fecha_caducidad": _fechaCaducidadCtrl.text,
+      });
+
+      _cantidadCtrl.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-  return AlertDialog(
-    title: const Text('Registrar Producción'),
-    content: SizedBox(
-      width: MediaQuery.of(context).size.width * 0.9,
-      child: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-
-              /// SECCIÓN: DATOS DE PRODUCCIÓN
-              const Text(
-                "Datos de Producción",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 15),
-
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 3,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 4.5,
-                children: [
-
-                  /// PRODUCTO
-                  DropdownButtonFormField<String>(
-                    value: _productoSelId,
-                    items: _productos
-                        .map((c) => DropdownMenuItem(
-                              value: c['id_producto'].toString(),
-                              child: Text(c['nombre']),
-                            ))
-                        .toList(),
-                    onChanged: (v) {
-                      setState(() {
-                        _productoSelId = v;
-                        _varianteSelId = null;
-
-                        _variantesFiltradas = _variantes.where((variante) {
-                          return variante['id_producto'].toString() == v;
-                        }).toList();
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Producto',
-                      border: OutlineInputBorder(),
-                    ),
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.factory),
+          SizedBox(width: 10),
+          Text("Registrar Producción"),
+        ],
+      ),
+      content: SizedBox(
+        width: 950,
+        // Agregamos un tema local para estandarizar la altura y bordes de TODOS los inputs
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            inputDecorationTheme: InputDecorationTheme(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                /// FORMULARIO
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-
-                  /// VARIANTE
-                  DropdownButtonFormField<String>(
-                    value: _varianteSelId,
-                    items: _variantesFiltradas
-                        .map((c) => DropdownMenuItem(
-                              value: c['id_variante'].toString(),
-                              child: Text(c['tamaño']),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setState(() => _varianteSelId = v),
-                    decoration: const InputDecoration(
-                      labelText: 'Variante',
-                      border: OutlineInputBorder(),
-                    ),
+                  child: Column(
+                    children: [
+                      // --- FILA 1 ---
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _productoSelId,
+                              decoration: const InputDecoration(labelText: "Producto"),
+                              items: _productos.map((p) {
+                                return DropdownMenuItem(
+                                  value: p['id_producto'].toString(),
+                                  child: Text(p['nombre']),
+                                );
+                              }).toList(),
+                              validator: (v) => v == null ? 'Requerido' : null,
+                              onChanged: (v) {
+                                setState(() {
+                                  _productoSelId = v;
+                                  _varianteSelId = null; // Reset variante
+                                  _variantesFiltradas = _variantes
+                                      .where((variante) => variante['id_producto'].toString() == v)
+                                      .toList();
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _varianteSelId,
+                              // 1. DESHABILITAR si no hay producto seleccionado o si la lista filtrada está vacía
+                              onChanged: (_productoSelId != null && _variantesFiltradas.isNotEmpty)
+                                  ? (v) => setState(() => _varianteSelId = v)
+                                  : null,
+                              decoration: InputDecoration(
+                                labelText: "Variante",
+                                // 2. ERROR VISUAL INMEDIATO: Si hay producto pero no tiene variantes, se pone en rojo
+                                errorText: (_productoSelId != null && _variantesFiltradas.isEmpty)
+                                    ? 'Producto sin variantes'
+                                    : null,
+                                // 3. TEXTO DE AYUDA DINÁMICO
+                                hintText: _productoSelId == null
+                                    ? 'Elija un producto primero'
+                                    : (_variantesFiltradas.isEmpty ? 'Inválido' : 'Seleccione variante'),
+                              ),
+                              items: _variantesFiltradas.map((v) {
+                                return DropdownMenuItem(
+                                  value: v['id_variante'].toString(),
+                                  child: Text(v['tamaño']),
+                                );
+                              }).toList(),
+                              // 4. VALIDACIÓN ESTRICTA
+                              validator: (v) {
+                                if (_productoSelId != null && _variantesFiltradas.isEmpty) {
+                                  return 'Cambie el producto';
+                                }
+                                return v == null ? 'Requerido' : null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildField(
+                              label: "Cantidad",
+                              controller: _cantidadCtrl,
+                              isNumeric: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // --- FILA 2 ---
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _buildDateField(
+                              label: "Fecha Producción",
+                              controller: _fechaProduccionCtrl,
+                              context: context,
+                              isProduccion: true,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildDateField(
+                              label: "Fecha Caducidad",
+                              controller: _fechaCaducidadCtrl,
+                              context: context,
+                              isProduccion: false,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: SizedBox(
+                              height: 52, // Altura igualada a los TextFields estándar
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.add),
+                                label: const Text("Agregar a tabla", style: TextStyle(fontSize: 16)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.amber[600],
+                                  foregroundColor: Colors.black87,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                onPressed: _agregarProduccion,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-
-                  /// CANTIDAD
-                  _buildField(
-                    label: 'Cantidad Producida',
-                    controller: _precioCostoCtrl,
-                    isNumeric: true,
-                  ),
-
-                  /// FECHA PRODUCCIÓN
-                  _buildDateField(
-                    label: 'Fecha Producción',
-                    controller: _fechaProduccionCtrl,
-                    context: context,
-                  ),
-
-                  /// FECHA CADUCIDAD
-                  _buildDateField(
-                    label: 'Fecha Caducidad',
-                    controller: _fechaCaducidadCtrl,
-                    context: context,
-                  ),
-
-                  /// BOTÓN AGREGAR
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text(
-                      "Agregar",
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    onPressed: () {
-                      print('Agregar Variante Producida');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          const Color.fromARGB(210, 236, 231, 131),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 25),
-
-              /// SECCIÓN TABLA
-              const Text(
-                "Producción Registrada",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text('Producto')),
-                    DataColumn(label: Text('Variante')),
-                    DataColumn(label: Text('Cantidad')),
-                    DataColumn(label: Text('F. Producción')),
-                    DataColumn(label: Text('F. Caducidad')),
-                  ],
-                  rows: const [],
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 20),
+
+                /// TABLA
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: SingleChildScrollView(
+                      child: DataTable(
+                        headingRowColor: MaterialStateProperty.all(Colors.grey.shade200),
+                        columns: const [
+                          DataColumn(label: Text("Producto", style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text("Variante", style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text("Cantidad", style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text("Producción", style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text("Caducidad", style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text("Acciones", style: TextStyle(fontWeight: FontWeight.bold))),
+                        ],
+                        rows: _produccionesTemp.map((p) {
+                          return DataRow(
+                            cells: [
+                              // Se cambiaron 'producto' por 'producto_nombre' y 'variante' por 'variante_nombre'
+                              DataCell(Text(p['producto_nombre']?.toString() ?? 'Sin producto')),
+                              DataCell(Text(p['variante_nombre']?.toString() ?? 'Sin variante')),
+                              DataCell(Text('${p['cantidad'] ?? 0} pzas')),
+                              DataCell(Text(p['fecha_produccion']?.toString() ?? 'N/A')),
+                              DataCell(Text(p['fecha_caducidad']?.toString() ?? 'N/A')),
+                              DataCell(
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  tooltip: 'Eliminar',
+                                  onPressed: () => setState(() => _produccionesTemp.remove(p)),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-
-    /// BOTONES DEL DIALOG
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context, null),
-        child: const Text('CANCELAR'),
-      ),
-      FilledButton(
-        style: FilledButton.styleFrom(
-          backgroundColor: Colors.blueGrey,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("CANCELAR"),
         ),
-        onPressed: () {
-          if (_formKey.currentState!.validate()) {
-            final Map<String, dynamic> datos = {
-              'tamaño': _tamanoCtrl.text,
-              'precio_venta':
-                  double.tryParse(_precioVentaCtrl.text) ?? 0.0,
-              'precio_costo':
-                  double.tryParse(_precioCostoCtrl.text),
-              'porciones': int.tryParse(_porcionesCtrl.text),
-              'peso_estimado':
-                  double.tryParse(_pesoCtrl.text),
-              'stock_minimo': int.tryParse(_minCtrl.text),
-              'stock_maximo': int.tryParse(_maxCtrl.text),
-            };
-
-            Navigator.pop(context, datos);
-          }
-        },
-        child: const Text('REGISTRAR'),
-      ),
-    ],
-  );
-}
+        FilledButton.icon(
+          icon: const Icon(Icons.save),
+          label: const Text("Guardar Registros"),
+          onPressed: _produccionesTemp.isEmpty 
+              ? null 
+              : () => Navigator.pop(context, _produccionesTemp), 
+        ),
+      ],
+    );
+  }
 
   Widget _buildField({
-    required String label, 
-    required TextEditingController controller, // ✅ RECIBE EL CONTROLADOR
-    String? prefix, 
-    bool isNumeric = false, 
-    bool onlyInt = false,
-    bool isRequired = false,
+    required String label,
+    required TextEditingController controller,
+    bool isNumeric = false,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: TextFormField(
-        controller: controller, // ✅ VINCULACIÓN
-        decoration: InputDecoration(
-          labelText: label,
-          prefixText: prefix,
-          border: const OutlineInputBorder(),
-          isDense: true,
-        ),
-        keyboardType: isNumeric ? TextInputType.numberWithOptions(decimal: !onlyInt) : TextInputType.text,
-        inputFormatters: isNumeric 
-          ? [FilteringTextInputFormatter.allow(RegExp(onlyInt ? r'^\d+$' : r'^\d+\.?\d{0,2}'))] 
-          : null,
-        validator: (v) => isRequired && (v == null || v.isEmpty) ? 'Requerido' : null,
-      ),
+    return TextFormField(
+      controller: controller,
+      keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+      // Solo permitimos números enteros positivos
+      inputFormatters: isNumeric ? [FilteringTextInputFormatter.digitsOnly] : null,
+      decoration: InputDecoration(labelText: label),
+      validator: (v) {
+        if (v == null || v.trim().isEmpty) return 'Requerido';
+        if (isNumeric) {
+          final number = int.tryParse(v);
+          if (number == null || number <= 0) return 'Debe ser mayor a 0';
+        }
+        return null;
+      },
     );
   }
 
@@ -286,15 +329,29 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
     required String label,
     required TextEditingController controller,
     required BuildContext context,
+    required bool isProduccion,
   }) {
     return TextFormField(
       controller: controller,
       readOnly: true,
       decoration: InputDecoration(
         labelText: label,
-        border: const OutlineInputBorder(),
         suffixIcon: const Icon(Icons.calendar_today),
       ),
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Requerido';
+        
+        // Validación cruzada de fechas: Producción <= Caducidad
+        if (!isProduccion && _fechaProduccionCtrl.text.isNotEmpty) {
+          final fProd = DateTime.tryParse(_fechaProduccionCtrl.text);
+          final fCad = DateTime.tryParse(v);
+          
+          if (fProd != null && fCad != null && fProd.isAfter(fCad)) {
+            return 'La caducidad debe ser posterior';
+          }
+        }
+        return null;
+      },
       onTap: () async {
         DateTime? fecha = await showDatePicker(
           context: context,
@@ -304,8 +361,16 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
         );
 
         if (fecha != null) {
-          controller.text =
-              "${fecha.year}-${fecha.month}-${fecha.day}";
+          // Formateamos para asegurar formato YYYY-MM-DD (Ej: 2024-05-09)
+          final month = fecha.month.toString().padLeft(2, '0');
+          final day = fecha.day.toString().padLeft(2, '0');
+          
+          setState(() {
+            controller.text = "${fecha.year}-$month-$day";
+          });
+          
+          // Forzamos re-validación tras elegir fecha
+          _formKey.currentState?.validate();
         }
       },
     );

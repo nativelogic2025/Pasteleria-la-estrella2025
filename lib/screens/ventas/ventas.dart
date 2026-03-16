@@ -290,8 +290,6 @@ class _VentasState extends State<Ventas> {
     if (context.mounted) { // Buena práctica: verificar si el widget sigue vivo
       _mostrarDialogo(context, nombre, variantes);
     }
-
-    //_agregarAlCarrito(context, r, nombre, precio);
   }
 
   // ---------- Diálogo ----------
