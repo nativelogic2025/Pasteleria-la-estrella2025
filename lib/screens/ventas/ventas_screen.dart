@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 // Importa aquí tus pantallas externas
 import 'ventas_pasteles.dart';
-import 'ventas_velas.dart';
 import 'ventas.dart';
 import '../carrito/carrito.dart'; // 👈 Importamos la nueva pantalla
 

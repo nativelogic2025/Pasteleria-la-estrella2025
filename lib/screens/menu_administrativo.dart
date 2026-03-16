@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'login/login_screen.dart'; // Pantalla de login
 import 'ventas/ventas_screen.dart';
 import 'pedido/pedido_screen.dart';
-import 'stock/stock_screen.dart';
+import 'produccion/produccion_screen.dart';
 import 'catalogo/catalogo_screen.dart';
 import 'ver_pedidos/ver_pedidos_screen.dart';
 import 'estado_cuenta/estado_cuenta_screen.dart';

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../servicios/supabase_client.dart';
+import './dialogo_produccion.dart';
+
+final supabase = Supabase.instance.client;
 
 class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
@@ -76,6 +79,31 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     }
   }
 
+  Future<void> _agregarProduccionASupabase() async {
+    // 1. Abrimos el diálogo y esperamos el Mapa
+    final Map<String, dynamic>? resultado = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => DialogoRegistrarProduccion(),
+    );
+
+    // 2. Si el resultado no es nulo, procedemos con Supabase
+    if (resultado != null) {
+      try {
+        // Agregamos el id_producto que no viene del diálogo
+        // resultado['id_producto'] = idProducto;
+
+        await supabase.from('producto_variantes').insert(resultado);
+
+        // _cargarProductos(); // Refrescar la lista de La Estrella
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Variante agregada con éxito')),
+        );
+      } catch (e) {
+        print("Error al guardar variante: $e");
+      }
+    }
+  }
+
   @override
   void dispose() {
     _tabController?.dispose();
@@ -94,42 +122,41 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
         .replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
-void _filterAndGroupItems() {
-  // 1. Cambiamos el tipo de lista a Mapas de Dart
-  List<Map<String, dynamic>> filteredList;
-  
-  if (_searchQuery.isEmpty) {
-    filteredList = List.from(_items);
-  } else {
-    final query = _normalizeText(_searchQuery);
-    filteredList = _items.where((item) {
-      // Usamos los helpers que ya adaptamos para leer mapas directamente
-      final nombre = _normalizeText(_nombre(item));
-      final sku = _normalizeText(_sku(item));
-      return nombre.contains(query) || sku.contains(query);
-    }).toList();
-  }
-  
-  // 2. El mapa de agrupamiento ahora usa String como llave y una lista de Mapas como valor
-  final Map<String, List<Map<String, dynamic>>> mapa = {};
-  
-  for (final variante in filteredList) {
-    // _getProductoRecord ahora devuelve el mapa del producto (id_producto)
-    final productoBase = _getProductoRecord(variante);
+  void _filterAndGroupItems() {
+    // 1. Cambiamos el tipo de lista a Mapas de Dart
+    List<Map<String, dynamic>> filteredList;
     
-    if (productoBase != null) {
-      // En Supabase/Postgres el ID suele ser 'id' (UUID o Int)
-      // Lo convertimos a String para la llave del mapa
-      final String idBase = productoBase['id_producto'].toString();
-      
-      (mapa[idBase] ??= []).add(variante);
+    if (_searchQuery.isEmpty) {
+      filteredList = List.from(_items);
+    } else {
+      final query = _normalizeText(_searchQuery);
+      filteredList = _items.where((item) {
+        // Usamos los helpers que ya adaptamos para leer mapas directamente
+        final nombre = _normalizeText(_nombre(item));
+        return nombre.contains(query);
+      }).toList();
     }
-  }
   
-  setState(() {
-    _productosAgrupados = mapa;
-  });
-}
+    // 2. El mapa de agrupamiento ahora usa String como llave y una lista de Mapas como valor
+    final Map<String, List<Map<String, dynamic>>> mapa = {};
+    
+    for (final variante in filteredList) {
+      // _getProductoRecord ahora devuelve el mapa del producto (id_producto)
+      final productoBase = _getProductoRecord(variante);
+      
+      if (productoBase != null) {
+        // En Supabase/Postgres el ID suele ser 'id' (UUID o Int)
+        // Lo convertimos a String para la llave del mapa
+        final String idBase = productoBase['id_producto'].toString();
+        
+        (mapa[idBase] ??= []).add(variante);
+      }
+    }
+    
+    setState(() {
+      _productosAgrupados = mapa;
+    });
+  }
 
   Map<String, dynamic>? _getProductoRecord(Map<String, dynamic> r) {
     if (r.containsKey('id_producto')) {
@@ -141,7 +168,7 @@ void _filterAndGroupItems() {
     final producto = _getProductoRecord(r);
     return producto?['nombre']?.toString() ?? 'Producto sin nombre';
   }
-  String _sku(Map<String, dynamic> r) => r['sku']?.toString() ?? '-';
+
   String _categoria(Map<String, dynamic> r) {
     final producto = _getProductoRecord(r);
     
@@ -165,8 +192,6 @@ void _filterAndGroupItems() {
     
     return 'Sin categoría';
   }
-  int _cantidad(Map<String, dynamic> r) => (r['cantidadStock'] as num?)?.toInt() ?? 0;
-  double _precio(Map<String, dynamic> r) => (r['precio_final'] as num?)?.toDouble() ?? 0.0;
   String? _iconUrl(Map<String, dynamic> r) {
     final file = r['imagen_url']; // En Repostería, 'icon' está en el primer nivel
     if (file == null || file.toString().isEmpty) return null;
@@ -186,7 +211,7 @@ void _filterAndGroupItems() {
     setState(() => _cargandoItems = true);
     try {
       // 1. Construimos la consulta base
-      var query = supabase.from('productos').select('*');
+      var query = supabase.from('productos').select(''' *, producto_variantes ( *, produccion (*) ) ''');
 
       // 2. Aplicamos filtro condicional
       if (categoriaId != null) {
@@ -232,25 +257,60 @@ void _filterAndGroupItems() {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Buscar por producto o SKU...',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(30),
-              borderSide: BorderSide.none,
+        // Eliminamos el espaciado automático para que el buscador use bien el ancho
+        titleSpacing: 10, 
+        title: Row(
+          children: [
+            // 1. SOLUCIÓN: Usar Expanded para que el TextField no cause error de ancho
+            Expanded(
+              child: SizedBox(
+                height: 40, // Opcional: Controla la altura para que se vea más estilizado
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar por producto ...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    filled: true,
+                    fillColor: Colors.grey[200], // Un color diferente ayuda a resaltar sobre el blanco
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty // Usar .text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            onPressed: () {
+                              _searchController.clear();
+                              // No olvides llamar a setState si quieres que desaparezca el icono X
+                              setState(() {}); 
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    // Actualiza el estado para mostrar/ocultar el icono de "clear"
+                    setState(() {});
+                  },
+                ),
+              ),
             ),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () => _searchController.clear(),
-                  )
-                : null,
-          ),
+            const SizedBox(width: 15),
+            SizedBox(
+              child: ElevatedButton(
+                onPressed: () => _agregarProduccionASupabase(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      const Color.fromARGB(210, 236, 231, 131),
+                ),
+                child: 
+                  const Text(
+                    "Registrar producción",
+                    style: TextStyle(fontSize: 18),
+                  ),
+              ),
+            ),
+          ],
         ),
         bottom: TabBar(
           controller: _tabController,
@@ -262,8 +322,8 @@ void _filterAndGroupItems() {
         ),
       ),
       body: _cargandoItems
-        ? const Center(child: CircularProgressIndicator())
-        : _buildProductosAgrupadosList(),
+          ? const Center(child: CircularProgressIndicator())
+          : _buildProductosAgrupadosList(),
       floatingActionButton: FloatingActionButton(
         onPressed: _recargarSegunTab,
         tooltip: 'Recargar',
@@ -323,25 +383,49 @@ void _filterAndGroupItems() {
     );
   }
 
-  DataTable _buildTablaVariantes(List<Map<String, dynamic>> variantes) {
+  DataTable _buildTablaVariantes(List<Map<String, dynamic>> productos) {
     return DataTable(
       columns: const [
-        DataColumn(label: Text('SKU / Variante')),
-        DataColumn(label: Text('Stock')),
-        DataColumn(label: Text('Precio')),
+        // DataColumn(label: Text('Producto')),
+        DataColumn(label: Text('Variante')),
+        DataColumn(label: Text('Cantidad Producida')),
+        DataColumn(label: Text('Fecha Producción')),
+        DataColumn(label: Text('Fecha Caducidad')),
       ],
-      rows: variantes.map((variante) {
-        return DataRow(cells: [
-          DataCell(Text(_sku(variante))),
-          DataCell(
-            Text(
-              '${_cantidad(variante)} pzas', 
-              style: const TextStyle(fontWeight: FontWeight.bold)
-            )
-          ),
-          DataCell(Text('\$${_precio(variante).toStringAsFixed(2)}')),
-        ]);
-      }).toList(),
+      rows: productos.expand((producto) {
+        final listaVariantes = producto['producto_variantes'] as List<dynamic>? ?? [];
+
+        // Primer expand: recorre las variantes
+        return listaVariantes.expand((variante) {
+          final listaProduccion = variante['produccion'] as List<dynamic>? ?? [];
+
+          // Si no hay producciones, ¿quieres mostrar la variante vacía? 
+          // Si la respuesta es NO, solo retorna el map de abajo.
+          // Si la respuesta es SÍ, podrías manejar un caso por defecto.
+
+          // Segundo expand: recorre cada registro de producción dentro de la variante
+          return listaProduccion.map((produccion) {
+            return DataRow(
+              cells: [
+                // Datos de la Variante (se repetirán si hay varias producciones)
+                DataCell(Text(variante['tamaño'] ?? 'Variante')), 
+                
+                // Datos específicos del registro de PRODUCCIÓN
+                DataCell(
+                  Text(
+                    '${produccion['cantidad'] ?? 0} pzas', 
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                
+                // Fechas tomadas del registro de producción, no de la variante
+                DataCell(Text(produccion['fecha_produccion'] ?? 'N/A')),
+                DataCell(Text(produccion['fecha_caducidad'] ?? 'N/A')),
+              ],
+            );
+          });
+        });
+      }).toList(),// Expand devuelve un Iterable, lo convertimos a List
     );
   }
 }

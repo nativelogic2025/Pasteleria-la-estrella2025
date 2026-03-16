@@ -564,30 +564,21 @@ class _InventarioScreenState extends State<InventarioScreen>
                           columns: const [
                             DataColumn(label: Text('Tamaño')),
                             DataColumn(label: Text('Stock')),
-                            DataColumn(label: Text('Precio')),
+                            DataColumn(label: Text('Precio Venta')),
+                            DataColumn(label: Text('Precio Costo')),
+                            DataColumn(label: Text('Porciones')),
+                            DataColumn(label: Text('Peso Estimado')),
+                            DataColumn(label: Text('Stock Minimo')),
+                            DataColumn(label: Text('Stock Maximo')),
                             DataColumn(label: Text('Eliminar')),
                           ],
                           rows: variantes.map((v) {
-                            final idVariante =
-                                v['id_variante'].toString();
                             final precio = _precio(v);
 
                             return DataRow(cells: [
                               DataCell(Text(v['tamaño'] ?? '-')),
                               DataCell(
-                                SizedBox(
-                                  width: 60,
-                                  child: TextField(
-                                    controller:
-                                        _stockCtrls[idVariante],
-                                    keyboardType:
-                                        TextInputType.number,
-                                    decoration:
-                                        const InputDecoration(
-                                      border: InputBorder.none,
-                                    ),
-                                  ),
-                                ),
+                                Text(v['stock'].toString() ?? '-')
                               ),
                               DataCell(Row(
                                 children: [
@@ -648,6 +639,11 @@ class _InventarioScreenState extends State<InventarioScreen>
                                   )
                                 ],
                               )),
+                              DataCell(Text(v['precio_costo'].toString() ?? '-')),
+                              DataCell(Text(v['porciones'].toString() ?? '-')),
+                              DataCell(Text(v['peso_estimado'].toString() ?? '-')),
+                              DataCell(Text(v['stock_minimo'].toString() ?? '-')),
+                              DataCell(Text(v['stock_maximo'].toString() ?? '-')),
                               DataCell(
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: Colors.red),
