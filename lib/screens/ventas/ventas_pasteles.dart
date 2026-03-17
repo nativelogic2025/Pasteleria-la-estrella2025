@@ -332,13 +332,14 @@ class _VentasPastelesState extends State<VentasPasteles> {
   // ---------- Taps + reglas especiales ----------
   void _onTapProducto(BuildContext context, Map<String, dynamic> r) async {
     final nombre = _nombre(r);
+    final url = _iconUrl(r) ?? '';
     final idproducto = r['id_producto'];
 
     // Obtenemos las variantes directamente de la función
     final variantes = await _cargarVariantes(idproducto);
 
     if (context.mounted) { // Buena práctica: verificar si el widget sigue vivo
-      _mostrarDialogo(context, nombre, variantes);
+      _mostrarDialogo(context, nombre, url, variantes);
     }
   }
 
@@ -346,6 +347,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
   void _mostrarDialogo(
     BuildContext context,
     String nombreDelGrupo,
+    String imagen,
     List<Map<String, dynamic>> variantesDisponibles,
   ) {
     showDialog(
@@ -368,7 +370,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   child: InkWell( // Hace que toda la tarjeta sea cliqueable
                     onTap: tieneStock ? () {
-                      _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', precio);
+                      _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', imagen, precio);
                       Navigator.pop(context);
                     } : null, // Deshabilitado si no hay stock
                     child: Padding(
@@ -432,9 +434,9 @@ class _VentasPastelesState extends State<VentasPasteles> {
   }
 
   // ---------- Agregar al carrito ----------
-  void _agregarAlCarrito(BuildContext context, Map<String, dynamic> r, String nombre, double precio) {
-    final imgUrl = _iconUrl(r);
+  void _agregarAlCarrito(BuildContext context, Map<String, dynamic> r, String nombre, String imgUrl, double precio) {
     final assetFallback = 'assets/pasteles/${_slug(nombre)}.png';
+    print(imgUrl);
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(

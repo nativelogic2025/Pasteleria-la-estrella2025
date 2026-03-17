@@ -37,6 +37,7 @@ class CarritoScreen extends StatelessWidget {
                     itemCount: carritoProvider.productos.length,
                     itemBuilder: (context, index) {
                       final producto = carritoProvider.productos[index];
+                      print(producto.imagen);
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Padding(

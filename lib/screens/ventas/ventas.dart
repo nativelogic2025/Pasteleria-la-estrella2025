@@ -282,13 +282,14 @@ class _VentasState extends State<Ventas> {
   // ---------- Taps + reglas especiales ----------
   void _onTapProducto(BuildContext context, Map<String, dynamic> r) async {
     final nombre = _nombre(r);
+    final url = _iconUrl(r) ?? '';
     final idproducto = r['id_producto'];
 
     // Obtenemos las variantes directamente de la función
     final variantes = await _cargarVariantes(idproducto);
 
     if (context.mounted) { // Buena práctica: verificar si el widget sigue vivo
-      _mostrarDialogo(context, nombre, variantes);
+      _mostrarDialogo(context, nombre, url, variantes);
     }
   }
 
@@ -296,6 +297,7 @@ class _VentasState extends State<Ventas> {
   void _mostrarDialogo(
     BuildContext context,
     String nombreDelGrupo,
+    String imagen,
     List<Map<String, dynamic>> variantesDisponibles,
   ) {
     showDialog(
@@ -318,7 +320,7 @@ class _VentasState extends State<Ventas> {
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   child: InkWell( // Hace que toda la tarjeta sea cliqueable
                     onTap: tieneStock ? () {
-                      _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', precio);
+                      _agregarAlCarrito(context, variante, '$nombreDelGrupo - $tamano', imagen, precio);
                       Navigator.pop(context);
                     } : null, // Deshabilitado si no hay stock
                     child: Padding(
@@ -383,8 +385,7 @@ class _VentasState extends State<Ventas> {
 
   // ---------- Agregar al carrito ----------
   void _agregarAlCarrito(
-      BuildContext context, Map<String, dynamic> r, String nombreMostrar, double precio) {
-    final imgUrl = _iconUrl(r);
+      BuildContext context, Map<String, dynamic> r, String nombreMostrar, String imgUrl, double precio) {
     final nombreBase = _nombre(r);
     final assetFallback = 'assets/${widget.categoria.toLowerCase()}/${_slug(nombreBase)}.png';
 
