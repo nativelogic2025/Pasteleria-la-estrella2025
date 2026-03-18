@@ -51,11 +51,8 @@ class _VentasPastelesState extends State<VentasPasteles> {
   String _nombre(Map<String, dynamic> r) =>
       (r['nombre'] ?? r['producto'] ?? '').toString();
 
-  double _precio(Map<String, dynamic> r) {
-    final v = r['precio'];
-    if (v is num) return v.toDouble();
-    return double.tryParse(v?.toString() ?? '0') ?? 0.0;
-  }
+  String _sabor(Map<String, dynamic> r) =>
+      (r['sabor'] ?? '').toString();
 
   int _stock(Map<String, dynamic> r) {
     final v = r['stock_total'];
@@ -180,12 +177,14 @@ class _VentasPastelesState extends State<VentasPasteles> {
               builder: (context, constraints) {
 
                 final chocolate = _items.where((r) {
-                  final n = _nombre(r).trim();
+                  //final n = _nombre(r).trim();
+                  final n = _sabor(r).trim();
                   return n.toLowerCase().startsWith('choco');
                 }).toList();
 
                 final vainilla = _items.where((r) {
-                  final n = _nombre(r).trim();
+                  //final n = _nombre(r).trim();
+                  final n = _sabor(r).trim();
                   return !n.toLowerCase().startsWith('choco');
                 }).toList();
 

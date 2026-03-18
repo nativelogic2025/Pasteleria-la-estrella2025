@@ -128,12 +128,13 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
+                              isExpanded: true,
                               value: _productoSelId,
                               decoration: const InputDecoration(labelText: "Producto"),
                               items: _productos.map((p) {
                                 return DropdownMenuItem(
                                   value: p['id_producto'].toString(),
-                                  child: Text(p['nombre']),
+                                  child: Text(p['nombre'], overflow: TextOverflow.ellipsis, maxLines: 1,),
                                 );
                               }).toList(),
                               validator: (v) => v == null ? 'Requerido' : null,
@@ -151,6 +152,7 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
                           const SizedBox(width: 16),
                           Expanded(
                             child: DropdownButtonFormField<String>(
+                              isExpanded: true,
                               value: _varianteSelId,
                               // 1. DESHABILITAR si no hay producto seleccionado o si la lista filtrada está vacía
                               onChanged: (_productoSelId != null && _variantesFiltradas.isNotEmpty)
@@ -170,7 +172,7 @@ class _DialogoRegistrarProduccionState extends State<DialogoRegistrarProduccion>
                               items: _variantesFiltradas.map((v) {
                                 return DropdownMenuItem(
                                   value: v['id_variante'].toString(),
-                                  child: Text(v['tamaño']),
+                                  child: Text(v['tamaño'], overflow: TextOverflow.ellipsis, maxLines: 1,),
                                 );
                               }).toList(),
                               // 4. VALIDACIÓN ESTRICTA
