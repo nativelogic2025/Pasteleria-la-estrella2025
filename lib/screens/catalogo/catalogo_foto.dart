@@ -38,18 +38,6 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     );
   }
 
-  // Álbum -> lista de bytes
-  /*final Map<String, List<Uint8List>> _albums = {
-    'Bautizo': [],
-    'Boda': [],
-    'Confirmación': [],
-    'Cumpleaños niña': [],
-    'Cumpleaños niño': [],
-    'Pasteles de venta': [],
-    'Primera comunión': [],
-    'XV': [],
-  };*/
-
   /// Carga inicial usando PostgREST de Supabase
   Future<void> _inicializarAlbums() async {
     try {
@@ -60,6 +48,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
       if (!mounted) return;
       setState(() {
         _albums = List<Map<String, dynamic>>.from(results[0]);
+        print(_albums);
         _cargandoDatos = false;
       });
     } catch (e) {
@@ -71,20 +60,34 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
 
   Future<void> _cargarAlbum(String id_album) async {
     try {
-      final results = await Future.wait([
-        supabase.from('fotos_album').select('*').order('titulo'),
-      ]);
+      setState(() => _cargandoDatos = true);
+      
+      final results = await supabase
+          .from('fotos_album')
+          .select('*')
+          .eq('id_album', id_album) // 🔥 Filtro indispensable
+          .order('titulo');
 
       if (!mounted) return;
       setState(() {
-        _fotos = List<Map<String, dynamic>>.from(results[0]);
+        _fotos = List<Map<String, dynamic>>.from(results);
         _cargandoDatos = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _cargandoDatos = false);
-      _mostrarSnack('Error al inicializar las fotos: $e', isError: true);
+      _mostrarSnack('Error al cargar fotos: $e', isError: true);
     }
+  }
+
+  // Traer la url completa del archivo
+  String? _iconUrl(Map<String, dynamic> r) {
+    final file = r['imagen_url']; 
+    if (file == null || file.toString().isEmpty) return null;
+
+    return supabase.storage
+        .from('recetas') 
+        .getPublicUrl('albums/${file.toString()}');
   }
 
   _Vista _vista = _Vista.carpetas;
@@ -126,7 +129,11 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             IconButton(
               tooltip: 'Eliminar álbum',
               icon: const Icon(Icons.delete_outline, color: Colors.black87),
-              onPressed: _eliminarAlbumActual,
+              onPressed: () {
+                // Buscamos el ID del álbum que coincide con el nombre actual
+                final album = _albums.firstWhere((a) => a['nombre'] == _albumActual);
+                _confirmarEliminarAlbum(album['id_album'].toString(), album['nombre']);
+              },
             ),
           const SizedBox(width: 6),
         ],
@@ -165,49 +172,53 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           ? _PrimaryFAB(
               icon: Icons.upload_rounded,
               label: 'Subir imagen',
-              onTap: _subirImagenes,
+              onTap: () => print('_subirImagenes'),
             )
           : _PrimaryFAB(
               icon: Icons.create_new_folder_rounded,
               label: 'Nuevo álbum',
-              onTap: _crearAlbum,
+              onTap: () => _crearAlbum(),
             ),
     );
   }
 
   // ──────────────── Carpetas (álbums) ────────────────
   Widget _buildFolderView(BuildContext context) {
-    var items = _albums.entries
-        .where((e) => e.key.toLowerCase().contains(_query))
-        .toList();
+    // 1. Filtrar primero por la búsqueda del usuario
+    var items = _albums.where((a) {
+      final name = a['nombre']?.toString().toLowerCase() ?? '';
+      return name.contains(_query);
+    }).toList();
 
+    // 2. Ordenar la lista filtrada
     items.sort((a, b) {
+      final String nameA = a['nombre']?.toString().toLowerCase() ?? '';
+      final String nameB = b['nombre']?.toString().toLowerCase() ?? '';
+      
       switch (_orden) {
         case 'Nombre (Z–A)':
-          return b.key.toLowerCase().compareTo(a.key.toLowerCase());
+          return nameB.compareTo(nameA);
         case 'Fotos (↑)':
-          return a.value.length.compareTo(b.value.length);
+          // Si no tienes un conteo de fotos en la tabla, puedes usar 0 por ahora
+          return (a['conteo_fotos'] ?? 0).compareTo(b['conteo_fotos'] ?? 0);
         case 'Fotos (↓)':
-          return b.value.length.compareTo(a.value.length);
-        default:
-          return a.key.toLowerCase().compareTo(b.key.toLowerCase());
+          return (b['conteo_fotos'] ?? 0).compareTo(a['conteo_fotos'] ?? 0);
+        default: // Nombre (A–Z)
+          return nameA.compareTo(nameB);
       }
     });
 
     if (items.isEmpty) {
       return const _Empty(
         icon: Icons.photo_library_outlined,
-        text: 'No hay álbums que coincidan.\nCrea uno con “Nuevo álbum”.',
+        text: 'No hay álbums.\nCrea uno con “Nuevo álbum”.',
       );
     }
 
     return LayoutBuilder(
       builder: (context, c) {
-        int cross = 2;
-        if (c.maxWidth >= 1400) cross = 6;
-        else if (c.maxWidth >= 1100) cross = 5;
-        else if (c.maxWidth >= 900) cross = 4;
-        else if (c.maxWidth >= 650) cross = 3;
+        // Cálculo de columnas responsivo
+        int cross = c.maxWidth >= 1400 ? 6 : c.maxWidth >= 1100 ? 5 : c.maxWidth >= 900 ? 4 : c.maxWidth >= 650 ? 3 : 2;
 
         return GridView.builder(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -219,22 +230,32 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             childAspectRatio: 1.05,
           ),
           itemBuilder: (_, i) {
-            final nombre = items[i].key;
-            final fotos = items[i].value;
-            final thumbs = fotos.take(4).toList();
-
-            // ✅ Ahora usamos la tarjeta estilo Windows
+            final album = items[i];
+            final String nombre = album['nombre'] ?? 'Sin nombre';
+            final String idAlbum = album['id_album'].toString();
+            
+            // Aquí asumimos que tienes una forma de obtener miniaturas o el conteo
             return _WinFolderCard(
               name: nombre,
-              count: fotos.length,
-              thumbs: thumbs,
-              onOpen: () => setState(() {
-                _albumActual = nombre;
-                _vista = _Vista.album;
-              }),
-              onMore: (a) {
-                if (a == 'rename') _renombrarAlbum(nombre);
-                if (a == 'delete') _confirmarEliminarAlbum(nombre);
+              count: album['conteo_fotos'] ?? 0, // Ajusta según tu DB
+              thumbs: const [], // Puedes pasar URLs de imágenes aquí después
+              onOpen: () {
+                setState(() {
+                  _albumActual = nombre;
+                  _vista = _Vista.album;
+                  _cargandoDatos = true; // Mostramos carga mientras bajamos fotos
+                });
+                _cargarAlbum(idAlbum); // Llamada a tu función de fotos
+              },
+              onMore: (accion) {
+                if (accion == 'rename') print('_renombrarAlbum(album)');
+                if (accion == 'delete') {
+                  // ✅ NO uses _albumActual aquí, usa 'album' que es el item actual del loop
+                  final String id = album['id_album'].toString();
+                  final String nombre = album['nombre'] ?? 'Sin nombre';
+                  
+                  _confirmarEliminarAlbum(id, nombre);
+                }
               },
             );
           },
@@ -246,44 +267,61 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   // ──────────────── Álbum (fotos) ────────────────
   Widget _buildAlbumView(BuildContext context) {
     if (_albumActual == null) return const SizedBox();
-    final fotos = _fotosActuales;
 
-    if (fotos.isEmpty) {
+    // 1. Filtrar las fotos según la búsqueda (_query)
+    // Buscamos coincidencia en el campo 'titulo' de la tabla 'fotos_album'
+    var fotosFiltradas = _fotos.where((f) {
+      final titulo = f['titulo']?.toString().toLowerCase() ?? '';
+      return titulo.contains(_query);
+    }).toList();
+
+    // 2. Ordenar (puedes reutilizar la lógica de carpetas o simplificar)
+    fotosFiltradas.sort((a, b) {
+      final String titleA = a['titulo']?.toString().toLowerCase() ?? '';
+      final String titleB = b['titulo']?.toString().toLowerCase() ?? '';
+      return _orden == 'Nombre (Z–A)' ? titleB.compareTo(titleA) : titleA.compareTo(titleB);
+    });
+
+    if (fotosFiltradas.isEmpty) {
       return const _Empty(
         icon: Icons.image_outlined,
-        text: 'Este álbum no tiene fotos.\nUsa “Subir imagen” para agregar.',
+        text: 'No se encontraron fotos en este álbum.\nUsa “Subir imagen” para agregar.',
       );
     }
 
     return LayoutBuilder(
       builder: (context, c) {
-        int cross = 2;
-        if (c.maxWidth >= 1400) cross = 6;
-        else if (c.maxWidth >= 1100) cross = 5;
-        else if (c.maxWidth >= 900) cross = 4;
-        else if (c.maxWidth >= 650) cross = 3;
+        int cross = c.maxWidth >= 1400 ? 6 : c.maxWidth >= 1100 ? 5 : c.maxWidth >= 900 ? 4 : c.maxWidth >= 650 ? 3 : 2;
 
         return GridView.builder(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          itemCount: fotos.length,
+          itemCount: fotosFiltradas.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cross,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
           ),
-          itemBuilder: (_, i) => _PhotoTile(
-            heroTag: '$_albumActual|$i',
-            bytes: fotos[i],
-            onTap: () => _verEnGrande(context, i),
-            onRemove: () => _confirmarEliminarFoto(i),
-          ),
+          itemBuilder: (_, i) {
+            final foto = fotosFiltradas[i];
+            final String? url = _iconUrl(foto); // 👈 Usamos tu función auxiliar
+
+            return _PhotoTile(
+              heroTag: '$_albumActual|${foto['id_foto']}',
+              // Si tu _PhotoTile acepta URL, usa Image.network. 
+              // Si solo acepta bytes, habrá que ajustar el widget.
+              imageUrl: url, 
+              titulo: foto['titulo'] ?? '',
+              onTap: () => print('_verEnGrande(context, foto)'),
+              onRemove: () => print('_confirmarEliminarFoto(foto)'),
+            );
+          },
         );
       },
     );
   }
 
   // ──────────────── Fotos: subir / eliminar / ver ────────────────
-  Future<void> _subirImagenes() async {
+  /*Future<void> _subirImagenes() async {
     if (_albumActual == null) return;
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
@@ -302,9 +340,9 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Se agregaron ${nuevas.length} imagen(es) a “$_albumActual”.')),
     );
-  }
+  }*/
 
-  Future<void> _confirmarEliminarFoto(int index) async {
+  /*Future<void> _confirmarEliminarFoto(int index) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -319,9 +357,9 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     if (ok == true && _albumActual != null) {
       setState(() => _albums[_albumActual]!.removeAt(index));
     }
-  }
+  }*/
 
-  void _verEnGrande(BuildContext context, int index) {
+  /*void _verEnGrande(BuildContext context, int index) {
     final bytes = _fotosActuales[index];
     showDialog(
       context: context,
@@ -352,11 +390,13 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
         ),
       ),
     );
-  }
+  }*/
 
-  // ──────────────── Álbums: crear / renombrar / eliminar ────────────────
+  // ──────────────── Álbums: crear / editar / eliminar ────────────────
   Future<void> _crearAlbum() async {
     final controller = TextEditingController();
+    
+    // 1. Mostrar el diálogo para capturar el nombre
     final nombre = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -367,97 +407,145 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           autofocus: true,
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.photo_album_outlined),
-            hintText: 'Nombre del álbum',
+            hintText: 'Ej. Pasteles de Boda',
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Crear')),
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text('CANCELAR')
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('CREAR'),
+          ),
         ],
       ),
     );
 
+    // 2. Validaciones básicas
     if (nombre == null || nombre.isEmpty) return;
-    if (_albums.containsKey(nombre)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ya existe un álbum llamado “$nombre”.')),
-      );
+
+    // Verificar si ya existe localmente para ahorrar una consulta innecesaria
+    final existe = _albums.any((a) => a['nombre'].toString().toLowerCase() == nombre.toLowerCase());
+    if (existe) {
+      _mostrarSnack('Ya existe un álbum llamado “$nombre”.', isError: true);
       return;
     }
 
-    setState(() {
-      _albums[nombre] = [];
-      _vista = _Vista.album;
-      _albumActual = nombre;
-    });
-  }
+    // 3. Lógica de inserción en Supabase
+    try {
+      setState(() => _cargandoDatos = true);
 
-  Future<void> _renombrarAlbum(String actual) async {
-    final controller = TextEditingController(text: actual);
-    final nuevo = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Renombrar álbum'),
-        content: TextField(
-          controller: controller,
-          textCapitalization: TextCapitalization.sentences,
-          autofocus: true,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.drive_file_rename_outline),
-            hintText: 'Nuevo nombre',
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Guardar')),
-        ],
-      ),
-    );
+      // Insertamos y pedimos que nos devuelva el registro creado (.select().single())
+      final nuevoAlbum = await supabase
+          .from('albumes')
+          .insert({'nombre': nombre})
+          .select()
+          .single();
 
-    if (nuevo == null || nuevo.isEmpty || nuevo == actual) return;
-    if (_albums.containsKey(nuevo)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ya existe un álbum llamado “$nuevo”.')),
-      );
-      return;
-    }
-
-    setState(() {
-      final fotos = _albums.remove(actual)!;
-      _albums[nuevo] = fotos;
-      if (_albumActual == actual) _albumActual = nuevo;
-    });
-  }
-
-  Future<void> _confirmarEliminarAlbum(String nombre) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Eliminar álbum'),
-        content: Text('¿Eliminar el álbum “$nombre” y todas sus fotos?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
-        ],
-      ),
-    );
-    if (ok == true) {
+      // 4. Actualizar el estado y navegar a la vista del álbum vacío
       setState(() {
-        _albums.remove(nombre);
-        if (_albumActual == nombre) {
-          _albumActual = null;
-          _vista = _Vista.carpetas;
-        }
+        _albums.add(nuevoAlbum); // Agregamos el mapa que devolvió la DB (con su id_album)
+        _albums.sort((a, b) => a['nombre'].compareTo(b['nombre'])); // Reordenar
+        _albumActual = nombre;
+        _fotos = []; // El álbum nuevo empieza vacío
+        _vista = _Vista.album;
+        _cargandoDatos = false;
+      });
+
+      _mostrarSnack('Álbum “$nombre” creado con éxito');
+
+    } catch (e) {
+      setState(() => _cargandoDatos = false);
+      _mostrarSnack('No se pudo crear el álbum: $e', isError: true);
+    }
+  }
+
+  Future<bool> _eliminarAlbum(String id_album, String? imagenUrl) async {
+    try {
+
+      // 1. ELIMINAR EL ARCHIVO DEL STORAGE (Si existe)
+      /*if (imagenUrl != null && imagenUrl.isNotEmpty) {
+        // Extraemos solo el nombre del archivo de la URL o usamos el path guardado
+        // Si guardaste el nombre directo: 'pastel_chocolate.png'
+        await supabase.storage
+            .from('productos') // Nombre de tu bucket
+            .remove([imagenUrl]); 
+      }*/
+
+      // 2. ELIMINAR EL REGISTRO DE LA BASE DE DATOS
+      // Si configuraste ON DELETE CASCADE, esto borrará las variantes automáticamente
+      await supabase
+          .from('albumes')
+          .delete()
+          .eq('id_album', id_album);
+
+      // 3. ACTUALIZAR INTERFAZ
+      _inicializarAlbums();
+ 
+      return true;
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al eliminar producto o imagen: $e'))
+      );
+      return false;
+    }
+  }  
+
+  Future<void> _confirmarEliminarAlbum(String id, String nombre) async {
+    final bool? eliminadoExitoso = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, 
+      builder: (context) {
+        bool eliminando = false;
+
+        return StatefulBuilder(
+          builder: (context, setStateInside) {
+            return AlertDialog(
+              title: Text(eliminando ? 'Eliminando...' : '¿Eliminar álbum?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (eliminando)
+                    const SizedBox(
+                      height: 80,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else
+                    Text('Estás a punto de eliminar el álbum "$nombre" y todas sus fotos. Esta acción no se puede deshacer.'),
+                ],
+              ),
+              actions: eliminando ? [] : [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('CANCELAR'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () async {
+                    setStateInside(() => eliminando = true);
+                    // Llamamos a la lógica de Supabase
+                    final resultado = await _eliminarAlbum(id, null);
+                    if (context.mounted) Navigator.pop(context, resultado);
+                  },
+                  child: const Text('ELIMINAR'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // Si se eliminó con éxito, volvemos a la vista de carpetas
+    if (eliminadoExitoso == true) {
+      setState(() {
+        _vista = _Vista.carpetas;
+        _albumActual = null;
       });
     }
-  }
-
-  Future<void> _eliminarAlbumActual() async {
-    final a = _albumActual;
-    if (a == null) return;
-    await _confirmarEliminarAlbum(a);
   }
 }
 
@@ -892,68 +980,72 @@ class _Collage extends StatelessWidget {
 
 class _PhotoTile extends StatelessWidget {
   final String heroTag;
-  final Uint8List bytes;
+  final String? imageUrl;
+  final String titulo;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+
   const _PhotoTile({
     required this.heroTag,
-    required this.bytes,
+    this.imageUrl,
+    required this.titulo,
     required this.onTap,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              blurRadius: 14,
-              offset: const Offset(0, 8),
-              color: Colors.black.withOpacity(0.06),
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Imagen desde la URL de Supabase
+            Hero(
+              tag: heroTag,
+              child: imageUrl != null
+                  ? Image.network(
+                      imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => 
+                          const Icon(Icons.broken_image, size: 40),
+                    )
+                  : const Icon(Icons.image, size: 40),
+            ),
+            // Botón de eliminar (opcional, en una esquina)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: CircleAvatar(
+                backgroundColor: Colors.black26,
+                radius: 14,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.close, size: 16, color: Colors.white),
+                  onPressed: onRemove,
+                ),
+              ),
+            ),
+            // Pie con el título
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                color: Colors.black45,
+                child: Text(
+                  titulo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                ),
+              ),
             ),
           ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Hero(
-                tag: heroTag,
-                child: Image.memory(
-                  bytes,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: const Color(0xFFF1F3F6),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.broken_image, size: 40),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 8,
-                top: 8,
-                child: InkWell(
-                  onTap: onRemove,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.45),
-                      shape: BoxShape.circle,
-                    ),
-                    padding: const EdgeInsets.all(6),
-                    child: const Icon(Icons.delete_outline, size: 18, color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
