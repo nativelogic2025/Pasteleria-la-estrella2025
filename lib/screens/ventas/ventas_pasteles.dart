@@ -80,7 +80,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
       final categoriaData = await supabase
           .from('categorias')
           .select('id_categoria')
-          .eq('nombre', 'pasteles')
+          .eq('nombre', 'Pasteles')
           .single();
 
       final categoriaPastelesId = categoriaData['id_categoria'];

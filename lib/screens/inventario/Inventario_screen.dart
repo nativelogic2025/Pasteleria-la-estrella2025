@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'agregar_producto.dart';
-import 'package:flutter/services.dart'; // 👈 Esta es la línea que falta
+import 'package:flutter/services.dart';
 
 import 'dialogo_variante.dart';
 import 'dialogo_producto.dart';
@@ -581,9 +581,9 @@ class _InventarioScreenState extends State<InventarioScreen>
                             final precioCosto = _precioCosto(v);
 
                             return DataRow(cells: [
-                              DataCell(Text(v['tamaño'] ?? '-')),
+                              DataCell(Text(v['tamaño']?.toString() ?? '-')),
                               DataCell(
-                                Text(v['stock'].toString() ?? '-')
+                                Text(v['stock']?.toString() ?? '-')
                               ),
                               DataCell(Row(
                                 children: [
@@ -645,10 +645,10 @@ class _InventarioScreenState extends State<InventarioScreen>
                                 ],
                               )),
                               DataCell(Text('\$${precioCosto.toStringAsFixed(2)}')),
-                              DataCell(Text(v['porciones'].toString() ?? '-')),
-                              DataCell(Text(v['peso_estimado'].toString() ?? '-')),
-                              DataCell(Text(v['stock_minimo'].toString() ?? '-')),
-                              DataCell(Text(v['stock_maximo'].toString() ?? '-')),
+                              DataCell(Text(v['porciones']?.toString() ?? '-')),
+                              DataCell(Text(v['peso_estimado']?.toString() ?? '-')),
+                              DataCell(Text(v['stock_minimo']?.toString() ?? '-')),
+                              DataCell(Text(v['stock_maximo']?.toString() ?? '-')),
                               DataCell(
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: Colors.red),

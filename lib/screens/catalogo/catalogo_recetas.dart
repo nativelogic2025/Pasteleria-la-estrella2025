@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // 👈 Migrado a Supabase
 import 'receta_detalle_screen.dart';
+import 'nueva_receta.dart';
 
 // Cliente global de Supabase
 final supabase = Supabase.instance.client;
@@ -18,8 +19,6 @@ class CatalogoRecetasScreen extends StatefulWidget {
 class _CatalogoRecetasScreenState extends State<CatalogoRecetasScreen> {
   // Datos (Ahora como Mapas de Dart)
   List<Map<String, dynamic>> _recetasDisponibles = [];
-  List<Map<String, dynamic>> _materiasPrimasDisponibles = [];
-  List<Map<String, dynamic>> _unidadesDeMedida = [];
 
   // Estado
   bool _cargandoDatos = true;
@@ -48,16 +47,12 @@ class _CatalogoRecetasScreenState extends State<CatalogoRecetasScreen> {
   Future<void> _inicializarDatos() async {
     try {
       final results = await Future.wait([
-        supabase.from('receta').select('*').order('nombre'),
-        supabase.from('matPrim').select('*, id_unidMed(*)').order('nombre'),
-        supabase.from('unidMed').select('*').order('nombre'),
+        supabase.from('recetas').select('*').order('nombre'),
       ]);
 
       if (!mounted) return;
       setState(() {
         _recetasDisponibles = List<Map<String, dynamic>>.from(results[0]);
-        _materiasPrimasDisponibles = List<Map<String, dynamic>>.from(results[1]);
-        _unidadesDeMedida = List<Map<String, dynamic>>.from(results[2]);
         _cargandoDatos = false;
       });
     } catch (e) {
@@ -71,7 +66,7 @@ class _CatalogoRecetasScreenState extends State<CatalogoRecetasScreen> {
     if (_refrescando) return;
     _refrescando = true;
     try {
-      final recetas = await supabase.from('receta').select('*').order('nombre');
+      final recetas = await supabase.from('recetas').select('*').order('nombre');
       if (!mounted) return;
       setState(() => _recetasDisponibles = List<Map<String, dynamic>>.from(recetas));
     } catch (e) {
@@ -91,17 +86,7 @@ class _CatalogoRecetasScreenState extends State<CatalogoRecetasScreen> {
   Future<void> _mostrarDialogoCrearReceta() async {
     final nuevaReceta = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => _DialogoCrearReceta(
-        materiasPrimas: _materiasPrimasDisponibles,
-        unidadesDeMedida: _unidadesDeMedida,
-        onIngredienteCreado: (nuevoIngrediente) {
-          if (!mounted) return;
-          setState(() {
-            _materiasPrimasDisponibles.add(nuevoIngrediente);
-            _materiasPrimasDisponibles.sort((a, b) => (a['nombre'] ?? '').compareTo(b['nombre'] ?? ''));
-          });
-        },
-      ),
+      builder: (context) => DialogoCrearReceta(),
     );
 
     if (nuevaReceta != null && mounted) {
@@ -134,21 +119,36 @@ class _CatalogoRecetasScreenState extends State<CatalogoRecetasScreen> {
 
     try {
       // Validar si está en uso
-      final enUso = await supabase.from('producto_receta').select('id').eq('id_receta', receta['id']).limit(1);
+      print(receta);
+      final imagenUrl = receta['archivo_url'];
+      final idProducto = receta['id_receta'];
+
+      final enUso = await supabase.from('receta_producto').select('*').eq('id_receta', receta['id_receta']).limit(1);
 
       if (enUso.isNotEmpty) {
         _mostrarSnack('No se puede eliminar: la receta está en uso por productos.', isError: true);
         return;
       }
 
-      // Supabase eliminará en cascada los ingredientes si configuraste FK Cascade en Postgres, 
-      // si no, borramos manual:
-      await supabase.from('receta_matPrim').delete().eq('id_receta', receta['id']);
-      await supabase.from('receta').delete().eq('id', receta['id']);
+      // 1. ELIMINAR EL ARCHIVO DEL STORAGE (Si existe)
+      if (imagenUrl != null && imagenUrl.isNotEmpty) {
+        await supabase.storage
+            .from('recetas') // Nombre de tu bucket
+            .remove([imagenUrl]); 
+      }
 
-      if (!mounted) return;
-      setState(() => _recetasDisponibles.removeWhere((r) => r['id'] == receta['id']));
-      _mostrarSnack('Receta eliminada correctamente');
+      // 2. ELIMINAR EL REGISTRO DE LA BASE DE DATOS
+      await supabase
+          .from('recetas')
+          .delete()
+          .eq('id_receta', idProducto);
+
+      // 3. ACTUALIZAR INTERFAZ
+      _refrescar();
+      
+      if (mounted) {
+        _mostrarSnack('Receta eliminada correctamente');
+      }
     } catch (e) {
       _mostrarSnack('Error al eliminar: $e', isError: true);
     }
@@ -254,191 +254,6 @@ class _RecipeCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// DIÁLOGO CREAR RECETA
-class _DialogoCrearReceta extends StatefulWidget {
-  final List<Map<String, dynamic>> materiasPrimas;
-  final List<Map<String, dynamic>> unidadesDeMedida;
-  final Function(Map<String, dynamic>) onIngredienteCreado;
-
-  const _DialogoCrearReceta({required this.materiasPrimas, required this.unidadesDeMedida, required this.onIngredienteCreado});
-
-  @override
-  State<_DialogoCrearReceta> createState() => _DialogoCrearRecetaState();
-}
-
-class _DialogoCrearRecetaState extends State<_DialogoCrearReceta> {
-  final _formKey = GlobalKey<FormState>();
-  final _nombreCtrl = TextEditingController();
-  bool _guardando = false;
-  final Map<String, TextEditingController> _ingredientes = {};
-  Uint8List? _pdfBytes;
-  String? _pdfFilename;
-
-  void _agregarIngrediente() async {
-    final matPrimSeleccionada = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Seleccionar Materia Prima'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () async {
-              Navigator.pop(context);
-              final nuevo = await showDialog<Map<String, dynamic>>(
-                context: context,
-                builder: (_) => _DialogoCrearIngrediente(unidadesDeMedida: widget.unidadesDeMedida),
-              );
-              if (nuevo != null) {
-                widget.onIngredienteCreado(nuevo);
-                setState(() => _ingredientes[nuevo['id'].toString()] = TextEditingController());
-              }
-            },
-            child: const ListTile(leading: Icon(Icons.add_circle_outline), title: Text('Crear nuevo ingrediente')),
-          ),
-          ...widget.materiasPrimas.where((mp) => !_ingredientes.containsKey(mp['id'].toString())).map((mp) => SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, mp),
-            child: Text(mp['nombre']),
-          )),
-        ],
-      ),
-    );
-
-    if (matPrimSeleccionada != null) {
-      setState(() => _ingredientes[matPrimSeleccionada['id'].toString()] = TextEditingController());
-    }
-  }
-
-  Future<void> _guardarReceta() async {
-    if (!_formKey.currentState!.validate() || _ingredientes.isEmpty) return;
-    setState(() => _guardando = true);
-
-    try {
-      String? pdfPath;
-      if (_pdfBytes != null) {
-        pdfPath = 'receta_${DateTime.now().millisecondsSinceEpoch}.pdf';
-        await supabase.storage.from('recetas_pdf').uploadBinary(pdfPath, _pdfBytes!, fileOptions: const FileOptions(contentType: 'application/pdf'));
-      }
-
-      final nuevaReceta = await supabase.from('receta').insert({
-        'nombre': _nombreCtrl.text.trim(),
-        'descripcion': pdfPath // En Supabase guardamos el nombre/ruta del archivo en el campo descripción
-      }).select().single();
-
-      final idReceta = nuevaReceta['id'];
-
-      final List<Map<String, dynamic>> batchIngredientes = _ingredientes.entries.map((e) => {
-        'id_receta': idReceta,
-        'id_matPrim': e.key,
-        'cantidad': double.tryParse(e.value.text.replaceAll(',', '.')) ?? 0.0
-      }).toList();
-
-      await supabase.from('receta_matPrim').insert(batchIngredientes);
-
-      if (!mounted) return;
-      Navigator.pop(context, nuevaReceta);
-    } catch (e) {
-      _snackLocal('Error: $e', error: true);
-    } finally {
-      if (mounted) setState(() => _guardando = false);
-    }
-  }
-
-  void _snackLocal(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: error ? Colors.red : Colors.orange));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Crear Nueva Receta'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(controller: _nombreCtrl, decoration: const InputDecoration(labelText: 'Nombre *', border: OutlineInputBorder())),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf'], withData: true);
-                  if (res != null) setState(() { _pdfBytes = res.files.single.bytes; _pdfFilename = res.files.single.name; });
-                },
-                icon: const Icon(Icons.upload_file),
-                label: Text(_pdfFilename ?? 'Seleccionar PDF (Opcional)'),
-              ),
-              const Divider(),
-              ..._ingredientes.entries.map((entry) {
-                final mp = widget.materiasPrimas.firstWhere((m) => m['id'].toString() == entry.key);
-                final abreviatura = mp['id_unidMed']?['abreviatura'] ?? '-';
-                return Row(children: [
-                  Expanded(child: Text(mp['nombre'])),
-                  SizedBox(width: 80, child: TextFormField(controller: entry.value, decoration: const InputDecoration(hintText: 'Cant.'))),
-                  Text(abreviatura),
-                  IconButton(icon: const Icon(Icons.delete), onPressed: () => setState(() => _ingredientes.remove(entry.key))),
-                ]);
-              }),
-              TextButton.icon(onPressed: _agregarIngrediente, icon: const Icon(Icons.add), label: const Text('Añadir Ingrediente')),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(onPressed: _guardando ? null : _guardarReceta, child: const Text('Guardar')),
-      ],
-    );
-  }
-}
-
-// DIÁLOGO INGREDIENTE
-class _DialogoCrearIngrediente extends StatefulWidget {
-  final List<Map<String, dynamic>> unidadesDeMedida;
-  const _DialogoCrearIngrediente({required this.unidadesDeMedida});
-
-  @override
-  State<_DialogoCrearIngrediente> createState() => _DialogoCrearIngredienteState();
-}
-
-class _DialogoCrearIngredienteState extends State<_DialogoCrearIngrediente> {
-  final _nombreCtrl = TextEditingController();
-  final _stockCtrl = TextEditingController(text: '0');
-  String? _unidadId;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nuevo Ingrediente'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(controller: _nombreCtrl, decoration: const InputDecoration(labelText: 'Nombre')),
-          TextField(controller: _stockCtrl, decoration: const InputDecoration(labelText: 'Stock')),
-          DropdownButtonFormField<String>(
-            value: _unidadId,
-            items: widget.unidadesDeMedida.map((u) => DropdownMenuItem(value: u['id'].toString(), child: Text(u['nombre']))).toList(),
-            onChanged: (v) => setState(() => _unidadId = v),
-            decoration: const InputDecoration(labelText: 'Unidad'),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: () async {
-            final res = await supabase.from('matPrim').insert({
-              'nombre': _nombreCtrl.text.trim(),
-              'stock': double.tryParse(_stockCtrl.text) ?? 0,
-              'id_unidMed': _unidadId
-            }).select('*, id_unidMed(*)').single();
-            if (mounted) Navigator.pop(context, res);
-          }, 
-          child: const Text('Guardar')
-        ),
-      ],
     );
   }
 }

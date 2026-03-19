@@ -128,6 +128,20 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     }
   }
 
+  Future<void> _actualizarObservaciones(
+      Map<String, dynamic> variante, String nuevo) async {
+    try {
+      await supabase
+          .from('produccion')
+          .update({'observaciones': nuevo})
+          .eq('id_produccion', variante['id_produccion']);
+
+      _recargarSegunTab();
+    } catch (e) {
+      _mostrarError('Error al actualizar observaciones: $e');
+    }
+  }
+
   @override
   void dispose() {
     _tabController?.dispose();
@@ -551,6 +565,7 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
         DataColumn(label: Text('Cantidad Disponible')),
         DataColumn(label: Text('Fecha Producción')),
         DataColumn(label: Text('Fecha Caducidad')),
+        DataColumn(label: Text('Observaciones')),
       ],
       rows: productos.expand((producto) {
         final listaVariantes = producto['producto_variantes'] as List<dynamic>? ?? [];
@@ -588,6 +603,57 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
                 // Fechas tomadas del registro de producción, no de la variante
                 DataCell(Text(produccion['fecha_produccion'] ?? 'N/A')),
                 DataCell(Text(produccion['fecha_caducidad'] ?? 'N/A')),
+                DataCell(Row(
+                  children: [
+                    Text(
+                        produccion['observaciones'] ?? ''),
+                    IconButton(
+                      icon: const Icon(Icons.edit,
+                          size: 18),
+                      onPressed: () async {
+                        final controller =
+                            TextEditingController(
+                                text: produccion['observaciones'] ?? '');
+
+                        final nuevo =
+                            await showDialog<String>(
+                              context: context,
+                              builder: (_) =>
+                                AlertDialog(
+                                  title: const Text(
+                                      'Actualizar observaciones'),
+                                  content: TextField(
+                                    controller: controller,
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(
+                                                context),
+                                        child: const Text(
+                                            'Cancelar')),
+                                    FilledButton(
+                                      onPressed: () {
+                                        final v = controller.text;
+                                        if (v != null) {
+                                          Navigator.pop(
+                                              context, v);
+                                        }
+                                      },
+                                      child:
+                                          const Text('Guardar'),
+                                    )
+                                  ],
+                                ),
+                            );
+
+                        if (nuevo != null) {
+                          _actualizarObservaciones(produccion, nuevo);
+                        }
+                      },
+                    )
+                  ],
+                )),
               ],
             );
           });

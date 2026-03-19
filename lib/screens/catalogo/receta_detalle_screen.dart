@@ -95,14 +95,14 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   // --- LÓGICA DE DATOS ---
   void _setPdfUrl() {
     // 1. Extraemos el nombre del archivo guardado en la columna 'descripcion'
-    final pdfFileName = widget.receta['descripcion']?.toString();
+    final pdfFileName = widget.receta['archivo_url']?.toString();
 
     setState(() {
       if (pdfFileName != null && pdfFileName.isNotEmpty) {
         // 2. Generamos la URL pública desde el bucket de Supabase
         // Asegúrate de que el nombre del bucket coincida con el que creaste ('recetas_pdf')
         _pdfUrl = supabase.storage
-            .from('recetas_pdf')
+            .from('recetas')
             .getPublicUrl(pdfFileName);
       } else {
         _pdfUrl = null;
@@ -119,17 +119,17 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
       // id_matPrim (...) trae los datos de la materia prima
       // id_matPrim ( id_unidMed (...) ) trae la unidad de medida dentro de la materia prima
       final List<Map<String, dynamic>> records = await supabase
-          .from('receta_matPrim')
+          .from('receta_ingrediente_variante')
           .select('''
             *,
-            id_matPrim (
-              *,
-              id_unidMed (
-                *
-              )
+            id_receta(
+              *
+            ),
+            id_ingrediente(
+              *
             )
           ''')
-          .eq('id_receta', widget.receta['id']); // Acceso a mapa con ['id']
+          .eq('id_receta', widget.receta['id_receta']); // Acceso a mapa con ['id']
 
       // 2. Poblamos la lista para la interfaz de edición
       _poblarListaEditable(records);
@@ -145,10 +145,13 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
     try {
       // 1. Realizamos la consulta trayendo la relación con la unidad de medida
       final List<Map<String, dynamic>> records = await supabase
-          .from('matPrim')
+          .from('ingredientes')
           .select('''
             *,
-            id_unidMed (
+            id_tipo (
+              *
+            ),
+            id_categoria(
               *
             )
           ''')

@@ -84,7 +84,7 @@ class _VentasState extends State<Ventas> {
       final categoriaData = await supabase
           .from('categorias')
           .select('id_categoria')
-          .eq('nombre', widget.categoria.toLowerCase())
+          .eq('nombre', widget.categoria)
           .single();
 
       final categoriaExtrasId = categoriaData['id_categoria'];

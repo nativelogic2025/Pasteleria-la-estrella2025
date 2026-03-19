@@ -3,6 +3,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+final supabase = Supabase.instance.client;
+
 class CatalogoFotoScreen extends StatefulWidget {
   const CatalogoFotoScreen({super.key});
 
@@ -13,8 +17,29 @@ class CatalogoFotoScreen extends StatefulWidget {
 enum _Vista { carpetas, album }
 
 class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
+  // Datos (Ahora como Mapas de Dart)
+  List<Map<String, dynamic>> _albums = [];
+  List<Map<String, dynamic>> _fotos = [];
+
+  // Estado
+  bool _cargandoDatos = true;
+  bool _refrescando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _inicializarAlbums();
+  }
+
+  void _mostrarSnack(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: isError ? Colors.red : Colors.green),
+    );
+  }
+
   // Álbum -> lista de bytes
-  final Map<String, List<Uint8List>> _albums = {
+  /*final Map<String, List<Uint8List>> _albums = {
     'Bautizo': [],
     'Boda': [],
     'Confirmación': [],
@@ -23,7 +48,44 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     'Pasteles de venta': [],
     'Primera comunión': [],
     'XV': [],
-  };
+  };*/
+
+  /// Carga inicial usando PostgREST de Supabase
+  Future<void> _inicializarAlbums() async {
+    try {
+      final results = await Future.wait([
+        supabase.from('albumes').select('*').order('nombre'),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _albums = List<Map<String, dynamic>>.from(results[0]);
+        _cargandoDatos = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cargandoDatos = false);
+      _mostrarSnack('Error al inicializar los Albums: $e', isError: true);
+    }
+  }
+
+  Future<void> _cargarAlbum(String id_album) async {
+    try {
+      final results = await Future.wait([
+        supabase.from('fotos_album').select('*').order('titulo'),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _fotos = List<Map<String, dynamic>>.from(results[0]);
+        _cargandoDatos = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cargandoDatos = false);
+      _mostrarSnack('Error al inicializar las fotos: $e', isError: true);
+    }
+  }
 
   _Vista _vista = _Vista.carpetas;
   String? _albumActual;
@@ -31,9 +93,6 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   // UI state
   String _query = '';
   String _orden = 'Nombre (A–Z)';
-
-  List<Uint8List> get _fotosActuales =>
-      _albumActual == null ? [] : (_albums[_albumActual] ?? []);
 
   @override
   Widget build(BuildContext context) {
