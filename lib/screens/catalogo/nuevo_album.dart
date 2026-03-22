@@ -5,51 +5,47 @@ import 'package:file_picker/file_picker.dart';
 
 final supabase = Supabase.instance.client;
 
-class DialogoCrearReceta extends StatefulWidget {
+class DialogoCrearAlbum extends StatefulWidget {
 
-  const DialogoCrearReceta({
+  const DialogoCrearAlbum({
     super.key
   });
 
   @override
-  State<DialogoCrearReceta> createState() => _DialogoCrearRecetaState();
+  State<DialogoCrearAlbum> createState() => _DialogoCrearAlbumState();
 }
 
-class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
+class _DialogoCrearAlbumState extends State<DialogoCrearAlbum> {
   final _formKey = GlobalKey<FormState>();
   final _nombreCtrl = TextEditingController();
   final _descripcionCtrl = TextEditingController();
-  final _tipoCtrl = TextEditingController();
-  final _versionCtrl = TextEditingController();
-  final _autorCtrl = TextEditingController();
+  bool _estado = true; // Por defecto no estará destacado
 
   bool _guardando = false;
-  Uint8List? _pdfBytes;
-  String? _pdfFilename;
+  Uint8List? _ImagenBytes;
+  String? _ImagenFilename;
 
   @override
   void initState() {
     super.initState();
   }
 
-  Future<void> _guardarReceta() async {
+  Future<void> _guardarImagen() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _guardando = true);
 
     try {
-      String? pdfPath;
-      if (_pdfBytes != null) {
-        pdfPath = 'receta_${DateTime.now().millisecondsSinceEpoch}.pdf';
-        await supabase.storage.from('recetas/pdf').uploadBinary(pdfPath, _pdfBytes!, fileOptions: const FileOptions(contentType: 'application/pdf'));
+      String? ImagenPath;
+      if (_ImagenBytes != null) {
+        ImagenPath = 'album_${DateTime.now().millisecondsSinceEpoch}.png';
+        await supabase.storage.from('recetas/albums').uploadBinary(ImagenPath, _ImagenBytes!, fileOptions: const FileOptions(contentType: 'application/png'));
       }
 
-      final nuevaReceta = await supabase.from('recetas').insert({
+      final nuevaReceta = await supabase.from('albumes').insert({
         'nombre': _nombreCtrl.text.trim(),
-        'archivo_url': pdfPath != '' && pdfPath != null ? 'pdf/$pdfPath' : null,
+        'portada_url': ImagenPath != '' && ImagenPath != null ? 'albums/$ImagenPath' : null,
         'descripcion': _descripcionCtrl.text.trim(),
-        'tipo': _tipoCtrl.text.trim(),
-        'version': _versionCtrl.text.trim(),
-        'autor': _autorCtrl.text.trim()
+        'activo': _estado,
       }).select().single();
 
       if (!mounted) return;
@@ -70,9 +66,9 @@ class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.book),
+          Icon(Icons.photo_album_outlined),
           SizedBox(width: 10),
-          Text("Agregar Receta"),
+          Text("Crear Album"),
         ],
       ),
       content: SizedBox(
@@ -82,32 +78,97 @@ class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextFormField(controller: _nombreCtrl, validator: (v) => v == null || v.isEmpty ? 'Requerido' : null, decoration: const InputDecoration(labelText: 'Nombre de la receta', border: OutlineInputBorder())),
+              TextFormField(controller: _nombreCtrl, validator: (v) => v == null || v.isEmpty ? 'Requerido' : null, decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder())),
+              const SizedBox(height: 16),
+              FormField<Uint8List>(
+                builder: (FormFieldState<Uint8List> state) {
+                  return GestureDetector(
+                    // Movemos el onTap al GestureDetector para que todo el recuadro sea clickeable
+                    onTap: () async {
+                      final res = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['png', 'jpg'],
+                        withData: true,
+                      );
+
+                      if (res != null) {
+                        // Asumo que tienes un setState disponible en tu clase
+                        setState(() {
+                          _ImagenBytes = res.files.single.bytes;
+                          _ImagenFilename = res.files.single.name;
+                        });
+
+                        // Le avisamos al FormField para que quite el error
+                        // state.didChange(_ImagenBytes);
+                      }
+                    },
+                    child: InputDecorator(
+                      // Aquí le damos el mismo diseño que un TextFormField
+                      decoration: InputDecoration(
+                        labelText: 'Imagen',
+                        border: const OutlineInputBorder(),
+                        // state.errorText maneja automáticamente el borde rojo y el texto inferior
+                        errorText: state.errorText, 
+                        // Opcional: Ajusta el padding para que coincida con tus otros campos
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                      // Lo que va dentro del recuadro
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _ImagenFilename ?? 'Seleccionar Imagen (opcional)...',
+                              style: TextStyle(
+                                // Si no hay imagen, mostramos texto gris como si fuera un "hint"
+                                color: _ImagenFilename == null 
+                                    ? Colors.grey.shade600 
+                                    : Colors.black87,
+                                fontSize: 16,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Icon(
+                            Icons.image,
+                            color: state.hasError ? Colors.red.shade700 : Colors.grey.shade600,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 16),
               TextFormField(controller: _descripcionCtrl, decoration: const InputDecoration(labelText: 'Descripción (opcional)', border: OutlineInputBorder())),
               const SizedBox(height: 16),
-              TextFormField(controller: _tipoCtrl, decoration: const InputDecoration(labelText: 'Tipo (opcional)', border: OutlineInputBorder())),
-              const SizedBox(height: 16),
-              TextFormField(controller: _versionCtrl, validator: (v) => v == null || v.isEmpty ? 'Requerido' : null, decoration: const InputDecoration(labelText: 'Version', border: OutlineInputBorder()), keyboardType: TextInputType.numberWithOptions(decimal: true)),
-              const SizedBox(height: 16),
-              TextFormField(controller: _autorCtrl, decoration: const InputDecoration(labelText: 'Autor (opcional)', border: OutlineInputBorder())),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf'], withData: true);
-                  if (res != null) setState(() { _pdfBytes = res.files.single.bytes; _pdfFilename = res.files.single.name; });
-                },
-                icon: const Icon(Icons.upload_file),
-                label: Text(_pdfFilename ?? 'Seleccionar PDF (Opcional)'),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Estado',
+                  border: OutlineInputBorder(),
+                  // Reducimos un poco el padding interno para que el Switch encaje bien
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
+                ),
+                child: SwitchListTile(
+                  title: const Text('¿Activo?', style: TextStyle(fontSize: 14)),
+                  value: _estado,
+                  activeColor: const Color.fromARGB(255, 165, 106, 224), // Tu color morado (opcional)
+                  contentPadding: EdgeInsets.zero, // Quita márgenes extra del SwitchListTile
+                  onChanged: (bool valor) {
+                    setState(() {
+                      _estado = valor;
+                    });
+                  },
+                ),
               ),
-              const Divider(),
+              const SizedBox(height: 16),
             ],
           ),
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(onPressed: _guardando ? null : _guardarReceta, child: const Text('Guardar')),
+        FilledButton(onPressed: _guardando ? null : _guardarImagen, child: const Text('Guardar')),
       ],
     );
   }

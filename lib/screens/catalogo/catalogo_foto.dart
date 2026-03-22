@@ -2,8 +2,9 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'nueva_imagen.dart';
+import 'nuevo_album.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -42,13 +43,12 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   Future<void> _inicializarAlbums() async {
     try {
       final results = await Future.wait([
-        supabase.from('albumes').select('*').order('nombre'),
+        supabase.from('albumes').select('*, fotos_album(count)').order('nombre'),
       ]);
 
       if (!mounted) return;
       setState(() {
         _albums = List<Map<String, dynamic>>.from(results[0]);
-        print(_albums);
         _cargandoDatos = false;
       });
     } catch (e) {
@@ -87,7 +87,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
 
     return supabase.storage
         .from('recetas') 
-        .getPublicUrl('albums/${file.toString()}');
+        .getPublicUrl('${file.toString()}');
   }
 
   _Vista _vista = _Vista.carpetas;
@@ -95,7 +95,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
 
   // UI state
   String _query = '';
-  String _orden = 'Nombre (A–Z)';
+  String _orden = 'Nombre (A-Z)';
 
   @override
   Widget build(BuildContext context) {
@@ -154,7 +154,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
                 const SizedBox(width: 10),
                 _OrdenDropdown(
                   value: _orden,
-                  items: const ['Nombre (A–Z)', 'Nombre (Z–A)', 'Fotos (↑)', 'Fotos (↓)'],
+                  items: const ['Nombre (A-Z)', 'Nombre (Z-A)', 'Fotos (↑)', 'Fotos (↓)'],
                   onChanged: (v) => setState(() => _orden = v),
                 ),
               ],
@@ -172,12 +172,12 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           ? _PrimaryFAB(
               icon: Icons.upload_rounded,
               label: 'Subir imagen',
-              onTap: () => print('_subirImagenes'),
+              onTap: () => _mostrarDialogoSubirImagen(),
             )
           : _PrimaryFAB(
               icon: Icons.create_new_folder_rounded,
               label: 'Nuevo álbum',
-              onTap: () => _crearAlbum(),
+              onTap: () => _mostrarDialogoCrearCarpeta(),
             ),
     );
   }
@@ -196,14 +196,21 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
       final String nameB = b['nombre']?.toString().toLowerCase() ?? '';
       
       switch (_orden) {
-        case 'Nombre (Z–A)':
+        case 'Nombre (Z-A)':
           return nameB.compareTo(nameA);
         case 'Fotos (↑)':
-          // Si no tienes un conteo de fotos en la tabla, puedes usar 0 por ahora
-          return (a['conteo_fotos'] ?? 0).compareTo(b['conteo_fotos'] ?? 0);
+          int fotosA = (a['fotos_album'] != null && a['fotos_album'] is List && a['fotos_album'].isNotEmpty) 
+              ? (a['fotos_album'][0]['count'] ?? 0) : 0;
+          int fotosB = (b['fotos_album'] != null && b['fotos_album'] is List && b['fotos_album'].isNotEmpty) 
+              ? (b['fotos_album'][0]['count'] ?? 0) : 0;
+          return fotosA.compareTo(fotosB);
         case 'Fotos (↓)':
-          return (b['conteo_fotos'] ?? 0).compareTo(a['conteo_fotos'] ?? 0);
-        default: // Nombre (A–Z)
+          int fotosA = (a['fotos_album'] != null && a['fotos_album'] is List && a['fotos_album'].isNotEmpty) 
+              ? (a['fotos_album'][0]['count'] ?? 0) : 0;
+          int fotosB = (b['fotos_album'] != null && b['fotos_album'] is List && b['fotos_album'].isNotEmpty) 
+              ? (b['fotos_album'][0]['count'] ?? 0) : 0;
+          return fotosB.compareTo(fotosA); // Invertido para descendente
+        default: // Nombre (A-Z)
           return nameA.compareTo(nameB);
       }
     });
@@ -233,12 +240,13 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             final album = items[i];
             final String nombre = album['nombre'] ?? 'Sin nombre';
             final String idAlbum = album['id_album'].toString();
-            
-            // Aquí asumimos que tienes una forma de obtener miniaturas o el conteo
+            final String portada = supabase.storage.from('recetas').getPublicUrl(album['portada_url'].toString());
+            final int conteo = int.tryParse(album['fotos_album'][0]['count'].toString()) ?? 0;
+              
             return _WinFolderCard(
               name: nombre,
-              count: album['conteo_fotos'] ?? 0, // Ajusta según tu DB
-              thumbs: const [], // Puedes pasar URLs de imágenes aquí después
+              count: conteo, // Ajusta según tu DB
+              portada: portada, // Puedes pasar URLs de imágenes aquí después
               onOpen: () {
                 setState(() {
                   _albumActual = nombre;
@@ -279,7 +287,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     fotosFiltradas.sort((a, b) {
       final String titleA = a['titulo']?.toString().toLowerCase() ?? '';
       final String titleB = b['titulo']?.toString().toLowerCase() ?? '';
-      return _orden == 'Nombre (Z–A)' ? titleB.compareTo(titleA) : titleA.compareTo(titleB);
+      return _orden == 'Nombre (Z-A)' ? titleB.compareTo(titleA) : titleA.compareTo(titleB);
     });
 
     if (fotosFiltradas.isEmpty) {
@@ -321,6 +329,43 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   }
 
   // ──────────────── Fotos: subir / eliminar / ver ────────────────
+  Future<void> _mostrarDialogoSubirImagen() async {
+    final album = _albums.firstWhere((a) => a['nombre'] == _albumActual);
+    String id_album = album['id_album'].toString();
+
+    final nuevaImagen = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => DialogoSubirImagen(id_album: id_album)
+    );
+
+    if (nuevaImagen != null && mounted) {
+      setState(() {
+        _fotos.add(nuevaImagen);
+        _fotos.sort((a, b) => (a['titulo'] ?? '').toLowerCase().compareTo((b['titulo'] ?? '').toLowerCase()));
+      });
+      _mostrarSnack('Imagen Subida Correctamente');
+    }
+  }
+
+  Future<void> _mostrarDialogoCrearCarpeta() async {
+    final nuevoAlbum = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => DialogoCrearAlbum()
+    );
+
+    if (nuevoAlbum != null && mounted) {
+      setState(() {
+        _albums.add(nuevoAlbum); // Agregamos el mapa que devolvió la DB (con su id_album)
+        _albums.sort((a, b) => a['nombre'].compareTo(b['nombre'])); // Reordenar
+        _albumActual = nuevoAlbum['nombre'];
+        _fotos = []; // El álbum nuevo empieza vacío
+        _vista = _Vista.album;
+        _cargandoDatos = false;
+      });
+      _mostrarSnack('Album Creado Correctamente');
+    }
+  }
+
   /*Future<void> _subirImagenes() async {
     if (_albumActual == null) return;
     final result = await FilePicker.platform.pickFiles(
@@ -393,74 +438,6 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   }*/
 
   // ──────────────── Álbums: crear / editar / eliminar ────────────────
-  Future<void> _crearAlbum() async {
-    final controller = TextEditingController();
-    
-    // 1. Mostrar el diálogo para capturar el nombre
-    final nombre = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Nuevo álbum'),
-        content: TextField(
-          controller: controller,
-          textCapitalization: TextCapitalization.sentences,
-          autofocus: true,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.photo_album_outlined),
-            hintText: 'Ej. Pasteles de Boda',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context), 
-            child: const Text('CANCELAR')
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('CREAR'),
-          ),
-        ],
-      ),
-    );
-
-    // 2. Validaciones básicas
-    if (nombre == null || nombre.isEmpty) return;
-
-    // Verificar si ya existe localmente para ahorrar una consulta innecesaria
-    final existe = _albums.any((a) => a['nombre'].toString().toLowerCase() == nombre.toLowerCase());
-    if (existe) {
-      _mostrarSnack('Ya existe un álbum llamado “$nombre”.', isError: true);
-      return;
-    }
-
-    // 3. Lógica de inserción en Supabase
-    try {
-      setState(() => _cargandoDatos = true);
-
-      // Insertamos y pedimos que nos devuelva el registro creado (.select().single())
-      final nuevoAlbum = await supabase
-          .from('albumes')
-          .insert({'nombre': nombre})
-          .select()
-          .single();
-
-      // 4. Actualizar el estado y navegar a la vista del álbum vacío
-      setState(() {
-        _albums.add(nuevoAlbum); // Agregamos el mapa que devolvió la DB (con su id_album)
-        _albums.sort((a, b) => a['nombre'].compareTo(b['nombre'])); // Reordenar
-        _albumActual = nombre;
-        _fotos = []; // El álbum nuevo empieza vacío
-        _vista = _Vista.album;
-        _cargandoDatos = false;
-      });
-
-      _mostrarSnack('Álbum “$nombre” creado con éxito');
-
-    } catch (e) {
-      setState(() => _cargandoDatos = false);
-      _mostrarSnack('No se pudo crear el álbum: $e', isError: true);
-    }
-  }
 
   Future<bool> _eliminarAlbum(String id_album, String? imagenUrl) async {
     try {
@@ -638,14 +615,14 @@ class _PrimaryFAB extends StatelessWidget {
 class _WinFolderCard extends StatefulWidget {
   final String name;
   final int count;
-  final List<Uint8List> thumbs; // 0–4
+  final String portada; // 0–4
   final VoidCallback onOpen;
   final void Function(String action) onMore;
 
   const _WinFolderCard({
     required this.name,
     required this.count,
-    required this.thumbs,
+    required this.portada,
     required this.onOpen,
     required this.onMore,
   });
@@ -665,7 +642,7 @@ class _WinFolderCardState extends State<_WinFolderCard>
 
   @override
   Widget build(BuildContext context) {
-    final hasThumbs = widget.thumbs.isNotEmpty;
+    final hasThumbs = widget.portada.isNotEmpty;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -752,7 +729,7 @@ class _WinFolderCardState extends State<_WinFolderCard>
                               padding:
                                   const EdgeInsets.fromLTRB(14, 28, 14, 14),
                               child: hasThumbs
-                                  ? _Collage(thumbs: widget.thumbs)
+                                  ? _Portada(url: widget.portada)
                                   : const _EmptyThumbWindows(),
                             ),
                           ],
@@ -921,61 +898,33 @@ class _EmptyThumbWindows extends StatelessWidget {
   }
 }
 
-class _Collage extends StatelessWidget {
-  final List<Uint8List> thumbs; // 1–4
-  const _Collage({required this.thumbs});
+class _Portada extends StatelessWidget {
+  final String url;
 
+  const _Portada({
+    super.key,
+    required this.url,
+  });
   @override
   Widget build(BuildContext context) {
-    final t = thumbs.take(4).toList();
-    switch (t.length) {
-      case 1:
-        return _thumb(t[0]);
-      case 2:
-        return Row(children: [
-          Expanded(child: _thumb(t[0])),
-          const SizedBox(width: 4),
-          Expanded(child: _thumb(t[1])),
-        ]);
-      case 3:
-        return Row(children: [
-          Expanded(child: _thumb(t[0])),
-          const SizedBox(width: 4),
-          Expanded(child: Column(children: [
-            Expanded(child: _thumb(t[1])),
-            const SizedBox(height: 4),
-            Expanded(child: _thumb(t[2])),
-          ])),
-        ]);
-      default:
-        return Column(children: [
-          Expanded(child: Row(children: [
-            Expanded(child: _thumb(t[0])),
-            const SizedBox(width: 4),
-            Expanded(child: _thumb(t[1])),
-          ])),
-          const SizedBox(height: 4),
-          Expanded(child: Row(children: [
-            Expanded(child: _thumb(t[2])),
-            const SizedBox(width: 4),
-            Expanded(child: _thumb(t[3])),
-          ])),
-        ]);
-    }
-  }
-
-  Widget _thumb(Uint8List b) => ClipRRect(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.55),
         borderRadius: BorderRadius.circular(10),
-        child: Image.memory(
-          b,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: const Color(0xFFF1F3F6),
-            alignment: Alignment.center,
-            child: const Icon(Icons.broken_image, color: Colors.black38),
-          ),
-        ),
-      );
+        border: Border.all(color: Colors.black12),
+      ),
+      child: 
+      Image.network(
+        url,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) =>
+            const Icon(
+              Icons.image_not_supported,
+              size: 50,
+            ),
+      )
+    );
+  }
 }
 
 class _PhotoTile extends StatelessWidget {
