@@ -91,6 +91,15 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
         .getPublicUrl('${file.toString()}');
   }
 
+  String? _portadaUrl(Map<String, dynamic> r) {
+    final file = r['portada_url']; 
+    if (file == null || file.toString().isEmpty) return null;
+
+    return supabase.storage
+        .from('recetas') 
+        .getPublicUrl('${file.toString()}');
+  }
+
   _Vista _vista = _Vista.carpetas;
   String? _albumActual;
 
@@ -381,7 +390,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
       context: context,
       builder: (context) => DialogoEditarAlbum(
         nombre: r['nombre'], // El nombre que ya tienes
-        urlImagen: _iconUrl(r),           // La imagen que ya tienes
+        urlImagen: _portadaUrl(r),           // La imagen que ya tienes
         descripcion: r['descripcion'], // La descripción que ya tienes
         estado: r['activo'], // El sabor que ya tienes
       ),
@@ -443,7 +452,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
         await supabase.from('albumes').update(resultado).eq('id_album', r['id_album']);
 
         await _inicializarAlbums();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Producto actualizado con éxito'), backgroundColor: Colors.green),
