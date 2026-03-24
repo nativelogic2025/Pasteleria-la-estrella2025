@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'nueva_imagen.dart';
 import 'nuevo_album.dart';
+import 'editar_album.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -132,7 +133,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
               onPressed: () {
                 // Buscamos el ID del álbum que coincide con el nombre actual
                 final album = _albums.firstWhere((a) => a['nombre'] == _albumActual);
-                _confirmarEliminarAlbum(album['id_album'].toString(), album['nombre']);
+                _confirmarEliminarAlbum(album['id_album'].toString(), album['nombre'], album['portada_url']);
               },
             ),
           const SizedBox(width: 6),
@@ -241,8 +242,15 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             final String nombre = album['nombre'] ?? 'Sin nombre';
             final String idAlbum = album['id_album'].toString();
             final String portada = supabase.storage.from('recetas').getPublicUrl(album['portada_url'].toString());
-            final int conteo = int.tryParse(album['fotos_album'][0]['count'].toString()) ?? 0;
-              
+            // ✅ VERIFICACIÓN SEGURA:
+            int conteo = 0;
+            final relacionFotos = album['fotos_album'];
+
+            // Preguntamos: ¿Existe la relación? ¿Es una lista? ¿Tiene al menos 1 elemento?
+            if (relacionFotos != null && relacionFotos is List && relacionFotos.isNotEmpty) {
+              conteo = int.tryParse(relacionFotos[0]['count'].toString()) ?? 0;
+            }
+
             return _WinFolderCard(
               name: nombre,
               count: conteo, // Ajusta según tu DB
@@ -256,13 +264,14 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
                 _cargarAlbum(idAlbum); // Llamada a tu función de fotos
               },
               onMore: (accion) {
-                if (accion == 'rename') print('_renombrarAlbum(album)');
+                if (accion == 'editar') _mostrarDialogoEditarCarpeta(album);
                 if (accion == 'delete') {
                   // ✅ NO uses _albumActual aquí, usa 'album' que es el item actual del loop
                   final String id = album['id_album'].toString();
                   final String nombre = album['nombre'] ?? 'Sin nombre';
+                  final String imagen = album['portada_url'] ?? '';
                   
-                  _confirmarEliminarAlbum(id, nombre);
+                  _confirmarEliminarAlbum(id, nombre, imagen);
                 }
               },
             );
@@ -311,7 +320,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           ),
           itemBuilder: (_, i) {
             final foto = fotosFiltradas[i];
-            final String? url = _iconUrl(foto); // 👈 Usamos tu función auxiliar
+            final String url = _iconUrl(foto) ?? ''; // 👈 Usamos tu función auxiliar
 
             return _PhotoTile(
               heroTag: '$_albumActual|${foto['id_foto']}',
@@ -319,8 +328,8 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
               // Si solo acepta bytes, habrá que ajustar el widget.
               imageUrl: url, 
               titulo: foto['titulo'] ?? '',
-              onTap: () => print('_verEnGrande(context, foto)'),
-              onRemove: () => print('_confirmarEliminarFoto(foto)'),
+              onTap: () => _verEnGrande(context, foto['titulo'], url),
+              onRemove: () => _confirmarEliminarFoto(foto['id_foto'], foto['titulo'], foto['imagen_url']),
             );
           },
         );
@@ -366,46 +375,165 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     }
   }
 
-  /*Future<void> _subirImagenes() async {
-    if (_albumActual == null) return;
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      type: FileType.image,
-      withData: true,
-    );
-    if (result == null) return;
-
-    final nuevas = <Uint8List>[];
-    for (final f in result.files) {
-      if (f.bytes != null && f.bytes!.isNotEmpty) nuevas.add(f.bytes!);
-    }
-    if (nuevas.isEmpty) return;
-
-    setState(() => _albums[_albumActual]!.addAll(nuevas));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Se agregaron ${nuevas.length} imagen(es) a “$_albumActual”.')),
-    );
-  }*/
-
-  /*Future<void> _confirmarEliminarFoto(int index) async {
-    final ok = await showDialog<bool>(
+  Future<void> _mostrarDialogoEditarCarpeta(Map<String, dynamic> r) async {
+    // 1. Abrimos el diálogo y esperamos el Mapa
+    final Map<String, dynamic>? resultado = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Eliminar foto'),
-        content: Text('¿Eliminar esta foto del álbum “$_albumActual”?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
-        ],
+      builder: (context) => DialogoEditarAlbum(
+        nombre: r['nombre'], // El nombre que ya tienes
+        urlImagen: _iconUrl(r),           // La imagen que ya tienes
+        descripcion: r['descripcion'], // La descripción que ya tienes
+        estado: r['activo'], // El sabor que ya tienes
       ),
     );
-    if (ok == true && _albumActual != null) {
-      setState(() => _albums[_albumActual]!.removeAt(index));
-    }
-  }*/
 
-  /*void _verEnGrande(BuildContext context, int index) {
-    final bytes = _fotosActuales[index];
+    // 2. Si el resultado no es nulo, procedemos con Supabase
+    if (resultado != null) {
+      try {
+        // 1. Extraer datos de imagen y limpiar el mapa para la DB
+        final nuevaImagenFile = resultado.remove('nueva_imagen_file');
+        final imagenBytesWeb = resultado.remove('imagen_bytes_web');
+        final bool borrarImagen = resultado.remove('borrar_imagen_servidor') ?? false;
+        
+        // Obtenemos la URL o nombre actual antes de actualizar
+        final String? urlActual = r['portada_url']; 
+        String? nuevaUrlFinal = urlActual;
+
+        // 2. LÓGICA DE ELIMINACIÓN
+        if (borrarImagen && urlActual != null && urlActual.isNotEmpty) {
+          //print(borrarImagen ? "Usuario decidió borrar la imagen actual." : "Usuario decidió conservar la imagen actual."); // Debug
+          await supabase.storage.from('recetas').remove([urlActual]);
+          nuevaUrlFinal = null;
+        }
+
+        // 3. LÓGICA DE SUBIDA (NUEVA IMAGEN)
+        if (imagenBytesWeb != null || nuevaImagenFile != null) {
+          // Si ya había una imagen, la borramos para no dejar basura en el storage
+          if (urlActual != null && urlActual.isNotEmpty) {
+            await supabase.storage.from('recetas').remove([urlActual]);
+          }
+
+          final String extension = 'png'; // Puedes dinamizar esto
+          final String nombreArchivo = 'img_${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+          // Subida compatible con Web y Móvil
+          if (imagenBytesWeb != null) {
+            // Opción para Web usando bytes
+            await supabase.storage.from('recetas/albums').uploadBinary(
+              nombreArchivo, 
+              imagenBytesWeb,
+              fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
+            );
+          } else {
+            // Opción para Móvil usando File
+            await supabase.storage.from('productos/albums').upload(
+              nombreArchivo, 
+              nuevaImagenFile,
+              fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
+            );
+          }
+          
+          nuevaUrlFinal = 'albums/$nombreArchivo';
+        }
+
+        // 4. ACTUALIZAR BASE DE DATOS
+        // Asignamos la URL final (puede ser el nombre nuevo, el viejo o null)
+        resultado['portada_url'] = nuevaUrlFinal;
+
+        await supabase.from('albumes').update(resultado).eq('id_album', r['id_album']);
+
+        await _inicializarAlbums();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Producto actualizado con éxito'), backgroundColor: Colors.green),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al guardar producto: $e'))
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmarEliminarFoto(int id_foto, String nombre, String imagenUrl) async {
+    final bool? eliminadoExitoso = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, 
+      builder: (context) {
+        bool eliminando = false;
+
+        return StatefulBuilder(
+          builder: (context, setStateInside) {
+            return AlertDialog(
+              title: Text(eliminando ? 'Eliminando...' : '¿Eliminar foto?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (eliminando)
+                    const SizedBox(
+                      height: 80,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else
+                    Text('Estás a punto de eliminar "$nombre". Esta acción no se puede deshacer.'),
+                ],
+              ),
+              actions: eliminando ? [] : [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('CANCELAR'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () async {
+                    setStateInside(() => eliminando = true);
+                    final resultado = await _eliminarFoto(id_foto, imagenUrl);
+                    if (context.mounted) Navigator.pop(context, resultado);
+                  },
+                  child: const Text('ELIMINAR'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<bool> _eliminarFoto(int id_foto, String? imagenUrl) async {
+    try {
+
+      // 1. ELIMINAR EL ARCHIVO DEL STORAGE (Si existe)
+      if (imagenUrl != null && imagenUrl.isNotEmpty) {
+        // Extraemos solo el nombre del archivo de la URL o usamos el path guardado
+        // Si guardaste el nombre directo: 'pastel_chocolate.png'
+        await supabase.storage
+            .from('recetas') // Nombre de tu bucket
+            .remove([imagenUrl]); 
+      }
+
+      // 2. ELIMINAR EL REGISTRO DE LA BASE DE DATOS
+      await supabase
+          .from('fotos_album')
+          .delete()
+          .eq('id_foto', id_foto);
+
+      // 3. ACTUALIZAR INTERFAZ
+      _inicializarAlbums();
+ 
+      return true;
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al eliminar producto o imagen: $e'))
+      );
+      return false;
+    }
+  }
+
+  void _verEnGrande(BuildContext context, String nombre ,String imgUrl) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -415,11 +543,18 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           children: [
             Center(
               child: Hero(
-                tag: '$_albumActual|$index',
+                tag: '$_albumActual|$nombre',
                 child: InteractiveViewer(
                   minScale: 0.5,
                   maxScale: 4,
-                  child: Image.memory(bytes, fit: BoxFit.contain),
+                  child: imgUrl != ''
+                  ? Image.network(
+                      imgUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => 
+                          const Icon(Icons.broken_image, size: 40),
+                    )
+                  : const Icon(Icons.image, size: 40),
                 ),
               ),
             ),
@@ -435,21 +570,20 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
         ),
       ),
     );
-  }*/
+  }
 
   // ──────────────── Álbums: crear / editar / eliminar ────────────────
 
-  Future<bool> _eliminarAlbum(String id_album, String? imagenUrl) async {
+  Future<bool> _eliminarAlbum(String id_album, String imagenUrl) async {
     try {
-
       // 1. ELIMINAR EL ARCHIVO DEL STORAGE (Si existe)
-      /*if (imagenUrl != null && imagenUrl.isNotEmpty) {
+      if (imagenUrl.isNotEmpty) {
         // Extraemos solo el nombre del archivo de la URL o usamos el path guardado
         // Si guardaste el nombre directo: 'pastel_chocolate.png'
         await supabase.storage
-            .from('productos') // Nombre de tu bucket
+            .from('recetas') // Nombre de tu bucket
             .remove([imagenUrl]); 
-      }*/
+      }
 
       // 2. ELIMINAR EL REGISTRO DE LA BASE DE DATOS
       // Si configuraste ON DELETE CASCADE, esto borrará las variantes automáticamente
@@ -471,7 +605,12 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
     }
   }  
 
-  Future<void> _confirmarEliminarAlbum(String id, String nombre) async {
+  Future<void> _confirmarEliminarAlbum(String id, String nombre, String portada) async {
+    final int conteo = await supabase
+        .from('fotos_album')
+        .count(CountOption.exact) // Le dice a Supabase que devuelva solo el número
+        .eq('id_album', id);
+
     final bool? eliminadoExitoso = await showDialog<bool>(
       context: context,
       barrierDismissible: false, 
@@ -502,13 +641,30 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
                 FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: Colors.red),
                   onPressed: () async {
-                    setStateInside(() => eliminando = true);
-                    // Llamamos a la lógica de Supabase
-                    final resultado = await _eliminarAlbum(id, null);
-                    if (context.mounted) Navigator.pop(context, resultado);
+                    if (conteo < 1) {
+                      setStateInside(() => eliminando = true);
+                      
+                      // Llamamos a la lógica de Supabase
+                      final resultado = await _eliminarAlbum(id, portada);
+                      
+                      if (context.mounted) {
+                        Navigator.pop(context, resultado);
+                      }
+                    } else {
+                      if (context.mounted) {
+                        Navigator.pop(context, true);
+                      }
+                      // ✨ 2. Mensaje estático, ya que no hay variable "$e" aquí
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No puedes eliminar un álbum que contiene fotos.'),
+                          backgroundColor: Colors.orange, // Un color de advertencia queda bien aquí
+                        ),
+                      );
+                    }
                   },
                   child: const Text('ELIMINAR'),
-                ),
+                )
               ],
             );
           },
@@ -748,10 +904,10 @@ class _WinFolderCardState extends State<_WinFolderCard>
                       onSelected: widget.onMore,
                       itemBuilder: (_) => const [
                         PopupMenuItem(
-                          value: 'rename',
+                          value: 'editar',
                           child: ListTile(
                             leading: Icon(Icons.drive_file_rename_outline),
-                            title: Text('Renombrar'),
+                            title: Text('Editar'),
                           ),
                         ),
                         PopupMenuItem(
