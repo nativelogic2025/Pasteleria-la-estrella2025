@@ -603,57 +603,61 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
                 // Fechas tomadas del registro de producción, no de la variante
                 DataCell(Text(produccion['fecha_produccion'] ?? 'N/A')),
                 DataCell(Text(produccion['fecha_caducidad'] ?? 'N/A')),
-                DataCell(Row(
-                  children: [
-                    Text(
-                        produccion['observaciones'] ?? ''),
-                    IconButton(
-                      icon: const Icon(Icons.edit,
-                          size: 18),
-                      onPressed: () async {
-                        final controller =
-                            TextEditingController(
-                                text: produccion['observaciones'] ?? '');
+                DataCell(
+  Row(
+    children: [
+      // Usamos Expanded para que el texto no empuje al botón fuera de la celda
+      Expanded(
+        child: Text(
+          produccion['observaciones']?.toString() ?? '', 
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      IconButton(
+        icon: const Icon(Icons.edit, size: 18),
+        onPressed: () async {
+          // Aseguramos que el valor inicial sea un String real, nunca null
+          final String valorInicial = produccion['observaciones']?.toString() ?? '';
+          
+          final controller = TextEditingController(text: valorInicial);
 
-                        final nuevo =
-                            await showDialog<String>(
-                              context: context,
-                              builder: (_) =>
-                                AlertDialog(
-                                  title: const Text(
-                                      'Actualizar observaciones'),
-                                  content: TextField(
-                                    controller: controller,
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(
-                                                context),
-                                        child: const Text(
-                                            'Cancelar')),
-                                    FilledButton(
-                                      onPressed: () {
-                                        final v = controller.text;
-                                        if (v != null) {
-                                          Navigator.pop(
-                                              context, v);
-                                        }
-                                      },
-                                      child:
-                                          const Text('Guardar'),
-                                    )
-                                  ],
-                                ),
-                            );
+          final nuevo = await showDialog<String>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Actualizar observaciones'),
+              content: TextField(
+                controller: controller,
+                autofocus: true, // Mejorar experiencia de usuario
+                decoration: const InputDecoration(
+                  hintText: 'Escribe una observación...',
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    // Simplemente devolvemos el texto del controlador
+                    Navigator.pop(context, controller.text);
+                  },
+                  child: const Text('Guardar'),
+                )
+              ],
+            ),
+          );
 
-                        if (nuevo != null) {
-                          _actualizarObservaciones(produccion, nuevo);
-                        }
-                      },
-                    )
-                  ],
-                )),
+          // Solo actualizamos si el usuario presionó 'Guardar' (nuevo != null)
+          // y si el texto realmente cambió respecto al original
+          if (nuevo != null && nuevo != valorInicial) {
+            _actualizarObservaciones(produccion, nuevo);
+          }
+        },
+      )
+    ],
+  ),
+),
               ],
             );
           });

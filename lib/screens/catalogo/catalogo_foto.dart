@@ -435,7 +435,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             );
           } else {
             // Opción para Móvil usando File
-            await supabase.storage.from('productos/albums').upload(
+            await supabase.storage.from('recetas/albums').upload(
               nombreArchivo, 
               nuevaImagenFile,
               fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
@@ -455,12 +455,12 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Producto actualizado con éxito'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('Album actualizado con éxito'), backgroundColor: Colors.green),
           );
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar producto: $e'))
+          SnackBar(content: Text('Error al guardar Album: $e'))
         );
       }
     }
@@ -530,7 +530,8 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
           .eq('id_foto', id_foto);
 
       // 3. ACTUALIZAR INTERFAZ
-      _inicializarAlbums();
+      final album = _albums.firstWhere((a) => a['nombre'] == _albumActual);
+      _cargarAlbum(album['id_album'].toString()); // Volvemos a cargar las fotos del álbum para reflejar el cambio
  
       return true;
 
@@ -639,7 +640,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     )
                   else
-                    Text('Estás a punto de eliminar el álbum "$nombre" y todas sus fotos. Esta acción no se puede deshacer.'),
+                    Text('Estás a punto de eliminar el álbum "$nombre", esta acción requiere que el album no contenga fotos y después no se puede deshacer.'),
                 ],
               ),
               actions: eliminando ? [] : [

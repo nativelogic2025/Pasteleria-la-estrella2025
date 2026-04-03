@@ -41,7 +41,7 @@ class DialogoSubirImagenState extends State<DialogoSubirImagen> {
       String? ImagenPath;
       if (_ImagenBytes != null) {
         ImagenPath = 'foto_${DateTime.now().millisecondsSinceEpoch}.png';
-        await supabase.storage.from('recetas/albums').uploadBinary(ImagenPath, _ImagenBytes!, fileOptions: const FileOptions(contentType: 'application/png'));
+        await supabase.storage.from('recetas/albums').uploadBinary(ImagenPath, _ImagenBytes!, fileOptions: const FileOptions(contentType: 'image/png'));
       }
 
       final nuevaReceta = await supabase.from('fotos_album').insert({
