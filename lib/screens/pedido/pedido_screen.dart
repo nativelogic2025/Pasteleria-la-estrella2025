@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../carrito/carrito.dart';
+import 'package:pos_pasteleria_la_estrella/screens/ventas/producto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final supabase = Supabase.instance.client;
@@ -19,56 +19,66 @@ class _PedidoScreenState extends State<PedidoScreen> {
   final _nombreController = TextEditingController();
   final _telefonoController = TextEditingController();
   final _domicilioController = TextEditingController();
-  final _depositoController = TextEditingController();
   final _fleteController = TextEditingController();
   final _anticipoController = TextEditingController();
   final _descripcionController = TextEditingController();
   final _mensajeController = TextEditingController();
+  final _otrosCargosController = TextEditingController();
+
+  // Valores por defecto
+
+  double _subtotal = 0;
 
   DateTime? _fechaEntrega;
   TimeOfDay? _horaEntrega;
 
   // Producto
-  String _productoSeleccionado = 'Pastel';
-  String _tamanoSeleccionado = 'Individual';
-  int _pisos = 1;
-  bool _doble = false;
   bool _ingredienteExtra = false;
-  String? _baseSeleccionada;
-  final List<String> _bases = ['Bizcocho', 'Panqué', 'Galleta'];
+  bool _tipoEntrega = false; // false = recogida, true = entrega a domicilio
 
-  final Map<String, bool> _disenos = {
-    'Oblea': false,
-    'Sin Oblea': false,
-    'Normal': false,
-    'Crema': false,
-  };
-
+  // Seleccion por defecto
   String _saborSeleccionado = '';
-  List<String> _sabores = [];
+  String _armadoSeleccionado = 'Sensillo';
+  String _disenoSeleccionado = 'Norma (Crema/Betún)';
+  String _pisoSeleccionado = '1 Piso';
+  
 
+  String? _categoriaProductoSel;
   String? _productoSelId;
   String? _varianteSelId;
-  String? _saborSelId;
 
+  List<String> _sabores = [];
   List<Map<String, dynamic>> _variantesFiltradas1 = [];
   List<Map<String, dynamic>> _variantesFiltradas2 = [];
-  List<Map<String, dynamic>> _variantesSaboresFiltrados = [];
   List<Map<String, dynamic>> _variantes = [];
   List<Map<String, dynamic>> _productos = [];
   bool _cargando = true;
+
+  // Listas Estaticas CORREGIR DB
+  final List<String> _armadosList = ['Sensillo', 'Doble'];
+  final List<String> _pisosList = ['1 Piso', '2 Pisos', '3 Pisos', '4 Pisos'];
+  final List<String> _disenoList = ['Norma (Crema/Betún)', 'Con Oblea Comestible'];
+  // Fin de Listas Estáticas
 
   @override
   void initState() {
     super.initState();
     _inicializar();
+    _nombreController.text = '';
+    _telefonoController.text = '';
+    _domicilioController.text = '';
+
+    _otrosCargosController.text = '0.00';
+    _fleteController.text = '0.00';
+    _anticipoController.text = '0.00';
   }
 
   Future<void> _inicializar() async {
     setState(() => _cargando = true);
     try {
       _variantes = await supabase.from('producto_variantes').select('*').order('tamaño');
-      _productos = await supabase.from('productos').select('*').order('nombre');
+      _productos = await supabase.from('productos').select('''*, categorias!inner(*)''').neq('categorias.nombre', 'Velas').order('nombre');
+      //_productos = await supabase.from('productos').select('''*, categorias(*)''').order('nombre');
       //_productos = await supabase.from('productos').select('''*, categorias!inner(*)''').eq('categorias.nombre', 'Pasteles').order('nombre');
     } catch (e) {
       _mostrarError('Error al cargar datos: $e');
@@ -88,11 +98,12 @@ class _PedidoScreenState extends State<PedidoScreen> {
   double _restante = 0;
 
   void _calcularTotales() {
-    final deposito = double.tryParse(_depositoController.text) ?? 0;
+    _subtotal = _calcularSubtotal();
+    final otrosCargos = double.tryParse(_otrosCargosController.text) ?? 0;
     final flete = double.tryParse(_fleteController.text) ?? 0;
     final anticipo = double.tryParse(_anticipoController.text) ?? 0;
     setState(() {
-      _total = deposito + flete;
+      _total = _subtotal + otrosCargos + flete;
       _restante = (_total - anticipo).clamp(0, double.infinity);
     });
   }
@@ -115,16 +126,87 @@ class _PedidoScreenState extends State<PedidoScreen> {
     if (hora != null) setState(() => _horaEntrega = hora);
   }
 
+  void _verificarSeleccionAutomatica() {
+  // 1. Identificamos qué lista estamos usando actualmente
+  final listaActual = _ingredienteExtra ? _variantesFiltradas2 : _variantesFiltradas1;
+
+  // 2. Si la lista tiene EXACTAMENTE un elemento, lo seleccionamos
+  if (listaActual.length == 1) {
+    setState(() {
+      _varianteSelId = listaActual.first['id_variante'].toString();
+      _calcularTotales(); // Recalculamos totales y subtotal al seleccionar automáticamente la única variante disponible
+    });
+  } else {
+    // Si hay más de una (o ninguna), mejor resetear para que el usuario elija
+    setState(() {
+      _varianteSelId = null;
+      _calcularTotales(); // Recalculamos totales y subtotal al resetear la selección automática
+    });
+  }
+}
+
+  double _calcularSubtotal() {
+    double precioBase = 0;
+
+    if (_varianteSelId == null) return precioBase;
+    final variante = _variantes.firstWhere((v) => v['id_variante'].toString() == _varianteSelId);
+    precioBase = double.tryParse(variante['precio_venta'].toString()) ?? 0; // Precio base según la variante seleccionada
+
+    // Ajustes adicionales según configuraciones exclusivas de pasteles
+    if (_armadoSeleccionado == 'Doble') {
+      precioBase += 150; // Costo adicional por armado doble
+    }
+
+    if (_pisoSeleccionado == '2 Pisos') {
+      precioBase += 200; // Costo adicional por 2 pisos
+    } else if (_pisoSeleccionado == '3 Pisos') {
+      precioBase += 400; // Costo adicional por 3 pisos
+    } else if (_pisoSeleccionado == '4 Pisos') {
+      precioBase += 600; // Costo adicional por 4 pisos
+    }
+
+    return precioBase;
+  }
+
+  void _filtrarVariantes(){
+    final vistos = <String>{};
+    
+    // Filtramos variantes en dos listas: una sin ingrediente extra y otra con ingrediente extra, ambas basadas en el producto seleccionado y el sabor (si aplica)
+    _variantesFiltradas1 = _variantes.where((variante) {
+      final esMismoProducto = variante['id_producto'].toString() == _productoSelId;
+      final nombreTamano = variante['tamaño'].toString().trim();
+      final conIngredienteExtra = variante['tamaño'].toString().contains('Ingrediente Extra');
+      final TipoPan = variante['sabor'].toString().contains(_saborSeleccionado);
+      if (esMismoProducto && TipoPan && !vistos.contains(nombreTamano) && !conIngredienteExtra) {
+        vistos.add(nombreTamano);
+        return true;
+      }
+      return false;
+    }).toList();
+
+    _variantesFiltradas2 = _variantes.where((variante) {
+      final esMismoProducto = variante['id_producto'].toString() == _productoSelId;
+      final nombreTamano = variante['tamaño'].toString().trim();
+      final conIngredienteExtra = variante['tamaño'].toString().contains('Ingrediente Extra');
+      final TipoPan = variante['sabor'].toString().contains(_saborSeleccionado);
+      if (esMismoProducto && TipoPan && !vistos.contains(nombreTamano) && conIngredienteExtra) {
+        vistos.add(nombreTamano);
+        return true;
+      }
+      return false;
+    }).toList();
+  }
+
   @override
   void dispose() {
     _nombreController.dispose();
     _telefonoController.dispose();
     _domicilioController.dispose();
-    _depositoController.dispose();
     _fleteController.dispose();
     _anticipoController.dispose();
     _descripcionController.dispose();
     _mensajeController.dispose();
+    _otrosCargosController.dispose();
     super.dispose();
   }
 
@@ -146,18 +228,6 @@ class _PedidoScreenState extends State<PedidoScreen> {
         foregroundColor: Colors.black,
         title: const Text('Pedido'),
         centerTitle: true,
-        /*actions: [
-          IconButton(
-            tooltip: 'Carrito',
-            icon: const Icon(Icons.shopping_cart_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CarritoScreen()),
-              );
-            },
-          ),
-        ],*/
       ),
       body: Center(
         child: ConstrainedBox(
@@ -190,7 +260,8 @@ class _PedidoScreenState extends State<PedidoScreen> {
               ),
               child: Form(
                 key: _formKey,
-                child: ListView(
+                child: SingleChildScrollView(
+                  child: Column(
                   children: [
                     // Encabezado tipo Google Forms
                     _HeaderCard(
@@ -227,118 +298,167 @@ class _PedidoScreenState extends State<PedidoScreen> {
                         ),
                       ],
                     ),
-
                     
                     // Sección: Producto
                     _SectionCard(
                       title: 'Producto',
                       children: [
-                        SearchAnchor(
-                          builder: (BuildContext context, SearchController controller) {
-                            // Si ya hay un producto seleccionado, mostramos su nombre en el campo
-                            if (_productoSelId != null && controller.text.isEmpty) {
-                              final p = _productos.firstWhere((element) => element['id_producto'].toString() == _productoSelId);
-                              controller.text = p['nombre'];
-                            }
+                        FormField<String>(
+                        // 1. Aquí validamos si se seleccionó un producto
+                        validator: (_) {
+                          if (_productoSelId == null || _productoSelId!.isEmpty) {
+                            return 'Por favor selecciona un producto';
+                          }
+                          return null;
+                        },
+                        builder: (FormFieldState<String> state) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                                SearchAnchor(
+                                  builder: (BuildContext context, SearchController controller) {
+                                    // Si ya hay un producto seleccionado, mostramos su nombre en el campo
+                                    if (_productoSelId != null && controller.text.isEmpty) {
+                                      final p = _productos.firstWhere((element) => element['id_producto'].toString() == _productoSelId);
+                                      controller.text = p['nombre'];
+                                    }
 
-                            return SearchBar(
-                              controller: controller,
-                              padding: const MaterialStatePropertyAll<EdgeInsets>(EdgeInsets.symmetric(horizontal: 16.0)),
-                              onTap: () => controller.openView(),
-                              onChanged: (_) => controller.openView(),
-                              leading: const Icon(Icons.cake_outlined),
-                              hintText: 'Buscar producto...',
-                              elevation: const MaterialStatePropertyAll<double>(0),
-                              backgroundColor: MaterialStatePropertyAll<Color>(Colors.grey.shade100),
+                                    return SearchBar(
+                                      controller: controller,
+                                      padding: const MaterialStatePropertyAll<EdgeInsets>(EdgeInsets.symmetric(horizontal: 16.0)),
+                                      onTap: () => controller.openView(),
+                                      onChanged: (_) => controller.openView(),
+                                      leading: const Icon(Icons.cake_outlined),
+                                      hintText: '* Buscar producto...',
+                                      elevation: const MaterialStatePropertyAll<double>(0),
+                                      backgroundColor: MaterialStatePropertyAll<Color>(Colors.grey.shade100),
+                                    );
+                                  },
+                                  suggestionsBuilder: (BuildContext context, SearchController controller) {
+                                    // Filtramos la lista según lo que el usuario escribe
+                                    final String input = controller.value.text.toLowerCase();
+                                    
+                                    return _productos
+                                        .where((p) => p['nombre'].toString().toLowerCase().contains(input))
+                                        .map((p) => ListTile(
+                                              title: Text(p['nombre']),
+                                              onTap: () {
+                                                setState(() {
+                                                  _productoSelId = p['id_producto'].toString();
+                                                  _categoriaProductoSel = p['categorias']['nombre'].toString();
+                                                  _calcularTotales(); // Recalculamos totales y subtotal al cambiar de producto
+                                                  controller.closeView(p['nombre']);
+                                                  
+                                                  // Lógica de limpieza y filtrado de variantes que ya tenías
+                                                  _varianteSelId = null;
+                                                  _saborSeleccionado = '';
+                                                  _disenoSeleccionado = 'Norma (Crema/Betún)';
+                                                  _armadoSeleccionado = 'Sensillo';
+                                                  _pisoSeleccionado = '1 Piso';
+                                                  _ingredienteExtra = false;
+                                                  
+
+                                                  // Filtramos variantes en dos listas: una sin ingrediente extra y otra con ingrediente extra, ambas basadas en el producto seleccionado y el sabor (si aplica)
+                                                  _filtrarVariantes();
+
+                                                  _sabores = _variantes
+                                                      .where((variante) => variante['id_producto'].toString() == _productoSelId)
+                                                      .map((variante) => variante['sabor'].toString())
+                                                      .toSet() // 👈 Aquí ocurre la magia de la unicidad
+                                                      .toList();
+                                                  });
+
+                                                  _verificarSeleccionAutomatica(); // Verificamos si hay que seleccionar automáticamente la variante por tener solo una opción                                      
+                                              },
+                                            ));
+                                  },
+                                ),
+                                // 3. La Retroalimentación Visual (El mensaje de error)
+                                if (state.hasError)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8, left: 16),
+                                    child: Text(
+                                      state.errorText!, // Aquí dirá "Por favor selecciona un producto"
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error, // Rojo estándar de errores
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             );
-                          },
-                          suggestionsBuilder: (BuildContext context, SearchController controller) {
-                            // Filtramos la lista según lo que el usuario escribe
-                            final String input = controller.value.text.toLowerCase();
-                            
-                            return _productos
-                                .where((p) => p['nombre'].toString().toLowerCase().contains(input))
-                                .map((p) => ListTile(
-                                      title: Text(p['nombre']),
-                                      onTap: () {
-                                        setState(() {
-                                          _productoSelId = p['id_producto'].toString();
-                                          controller.closeView(p['nombre']);
-                                          
-                                          // Lógica de limpieza y filtrado de variantes que ya tenías
-                                          _varianteSelId = null;
-                                          _saborSeleccionado = '';
-                                          _ingredienteExtra = false;
-                                          final vistos = <String>{};
-
-                                          _variantesFiltradas1 = _variantes.where((variante) {
-                                            final esMismoProducto = variante['id_producto'].toString() == _productoSelId;
-                                            final nombreTamano = variante['tamaño'].toString().trim();
-                                            final conIngredienteExtra = variante['tamaño'].toString().contains('Ingrediente Extra');
-                                            if (esMismoProducto && !vistos.contains(nombreTamano) && !conIngredienteExtra) {
-                                              vistos.add(nombreTamano);
-                                              return true;
-                                            }
-                                            return false;
-                                          }).toList();
-
-                                          _variantesFiltradas2 = _variantes.where((variante) {
-                                            final esMismoProducto = variante['id_producto'].toString() == _productoSelId;
-                                            final nombreTamano = variante['tamaño'].toString().trim();
-                                            final conIngredienteExtra = variante['tamaño'].toString().contains('Ingrediente Extra');
-                                            if (esMismoProducto && !vistos.contains(nombreTamano) && conIngredienteExtra) {
-                                              vistos.add(nombreTamano);
-                                              return true;
-                                            }
-                                            return false;
-                                          }).toList();
-
-                                          _sabores = _variantes
-                                              .where((variante) => variante['id_producto'].toString() == _productoSelId)
-                                              .map((variante) => variante['sabor'].toString())
-                                              .toSet() // 👈 Aquí ocurre la magia de la unicidad
-                                              .toList();
-                                          });                                        
-                                      },
-                                    ));
                           },
                         ),
                         const SizedBox(height: 12),
                         if(_sabores.length > 1)
                         ...[
                           Text("Tipo de pan *", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade800)),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: _sabores.map((sabor) {
-                              // Es "selected" solo si coincide exactamente con nuestra variable única
-                              final bool isSelected = _saborSeleccionado == sabor;
-                              
-                              return FilterChip(
-                                selected: isSelected,
-                                label: Text(sabor),
-                                onSelected: (bool selected) {
-                                  setState(() {
-                                    if (selected) {
-                                      // Si lo selecciona, reemplazamos el valor anterior
-                                      _saborSeleccionado = sabor;
-                                    } else {
-                                      // Si lo deselecciona, podemos dejarlo en null o mantenerlo
-                                      _saborSeleccionado = ''; 
-                                    }
-                                  });
-                                },
-                                // Estilos de La Estrella
-                                shape: StadiumBorder(
-                                  side: BorderSide(
-                                    color: isSelected ? Colors.black87 : Colors.grey.shade300,
-                                    width: isSelected ? 1.5 : 1.0,
+                          FormField<String>(
+                          // 1. Aquí validamos si se seleccionó un producto
+                          validator: (_) {
+                            if (_saborSeleccionado.isEmpty) {
+                              return 'Por favor selecciona un sabor';
+                            }
+                            return null;
+                          },
+                          builder: (FormFieldState<String> state) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: _sabores.map((sabor) {
+                                      // Es "selected" solo si coincide exactamente con nuestra variable única
+                                      final bool isSelected = _saborSeleccionado == sabor;
+                                      
+                                      return FilterChip(
+                                        selected: isSelected,
+                                        label: Text(sabor),
+                                        onSelected: (bool selected) {
+                                          setState(() {
+                                            if (selected) {
+                                              // Si lo selecciona, reemplazamos el valor anterior
+                                              _saborSeleccionado = sabor;
+                                              _varianteSelId = null; // Limpiamos la selección de variante al cambiar el sabor, ya que las variantes dependen del sabor
+                                              _filtrarVariantes(); // Volvemos a filtrar variantes al cambiar el sabor, ya que algunas variantes pueden depender del sabor
+                                              _calcularTotales(); // Recalculamos totales y subtotal al cambiar sabor
+                                            } else {
+                                              // Si lo deselecciona, podemos dejarlo en null o mantenerlo
+                                              _saborSeleccionado = '';
+                                              _varianteSelId = null; // Limpiamos la selección de variante al cambiar el sabor, ya que las variantes dependen del sabor
+                                              _filtrarVariantes(); // Volvemos a filtrar variantes al cambiar el sabor, ya que algunas variantes pueden depender del sabor
+                                              _calcularTotales(); // Recalculamos totales y subtotal al cambiar sabor
+                                            }
+                                          });
+                                        },
+                                        // Estilos de La Estrella
+                                        shape: StadiumBorder(
+                                          side: BorderSide(
+                                            color: isSelected ? Colors.black87 : Colors.grey.shade300,
+                                            width: isSelected ? 1.5 : 1.0,
+                                          ),
+                                        ),
+                                        selectedColor: Colors.grey.shade200,
+                                        showCheckmark: true, // Aquí sí conviene el checkmark para indicar opción única
+                                      );
+                                    }).toList(),
                                   ),
-                                ),
-                                selectedColor: Colors.grey.shade200,
-                                showCheckmark: true, // Aquí sí conviene el checkmark para indicar opción única
+                                  // 3. La Retroalimentación Visual (El mensaje de error)
+                                  if (state.hasError)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8, left: 16),
+                                      child: Text(
+                                        state.errorText!, // Aquí dirá "Por favor selecciona un producto"
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.error, // Rojo estándar de errores
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               );
-                            }).toList(),
+                            },
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -351,6 +471,8 @@ class _PedidoScreenState extends State<PedidoScreen> {
                                 onChanged: (v) => setState(() {
                                   _ingredienteExtra = v; 
                                   _varianteSelId = null;
+                                  _subtotal = 0; // Reiniciamos subtotal al cambiar de ingrediente extra
+                                  _verificarSeleccionAutomatica(); // Verificamos si hay que seleccionar automáticamente la variante
                                 }),
                               ),
                               const SizedBox(width: 8),
@@ -367,26 +489,10 @@ class _PedidoScreenState extends State<PedidoScreen> {
                         DropdownButtonFormField<String>(
                           value: _varianteSelId,
                           // 1. DESHABILITAR si no hay producto seleccionado o si la lista filtrada está vacía
-                          onChanged: (_productoSelId != null && _variantesFiltradas1.isNotEmpty && !_ingredienteExtra) || (_productoSelId != null && _variantesFiltradas2.isNotEmpty && _ingredienteExtra)
+                          onChanged: _sabores.length > 1 && _saborSeleccionado.isEmpty ? null : (_productoSelId != null && _variantesFiltradas1.isNotEmpty && !_ingredienteExtra) || (_productoSelId != null && _variantesFiltradas2.isNotEmpty && _ingredienteExtra)
                               ? (v) => setState(() {
-                              _varianteSelId = v; 
-                              //_saborSelId = null; // 👈 CRÍTICO: Limpiar la selección anterior
-                              
-                              // 1. Creamos un Set vacío CADA VEZ que cambia el producto
-                              //final vistos2 = <String>{}; 
-
-                              // 2. Filtramos con limpieza
-                              /*_variantesSaboresFiltrados = _variantes.where((variante) {
-                                final esMismoProducto = variante['id_producto'].toString() == _productoSelId;
-                                // Usamos trim() y toLowerCase() para evitar que "Grande " y "Grande" sean diferentes
-                                final sabor = variante['sabor'].toString().trim();
-                                
-                                if (esMismoProducto && !vistos2.contains(sabor)) {
-                                  vistos2.add(sabor);
-                                  return true;
-                                }
-                                return false;
-                              }).toList();*/
+                              _varianteSelId = v;
+                              _calcularTotales(); // Recalculamos totales y subtotal al cambiar de variante
                             })
                               : null,
                           decoration: InputDecoration(
@@ -410,150 +516,153 @@ class _PedidoScreenState extends State<PedidoScreen> {
                           }).toList(),
                           // 4. VALIDACIÓN ESTRICTA
                           validator: (v) {
-                            if (_productoSelId != null && _variantesFiltradas1.isEmpty) {
+                            if (_productoSelId != null && _variantesFiltradas1.isEmpty && _variantesFiltradas2.isEmpty) {
                               return 'Cambie el producto';
                             }
                             return v == null ? 'Requerido' : null;
                           },
                         ),
-                        /*const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _saborSelId,
-                          // 1. DESHABILITAR si no hay producto seleccionado o si la lista filtrada está vacía
-                          onChanged: (_varianteSelId != null && _variantesSaboresFiltrados.isNotEmpty)
-                              ? (v) => setState(() => _saborSelId = v)
-                              : null,
-                          decoration: InputDecoration(
-                            labelText: "Sabor *",
-                            // 2. ERROR VISUAL INMEDIATO: Si hay producto pero no tiene variantes, se pone en rojo
-                            errorText: (_varianteSelId != null && _variantesSaboresFiltrados.isEmpty)
-                                ? 'Producto sin sabores disponibles'
-                                : null,
-                            // 3. TEXTO DE AYUDA DINÁMICO
-                            hintText: _varianteSelId == null
-                                ? 'Elija un producto y tamaño primero'
-                                : (_variantesSaboresFiltrados.isEmpty ? 'Inválido' : 'Seleccione sabor'),
-                          ),
-                          items: _variantesSaboresFiltrados.map((v) {
-                            return DropdownMenuItem(
-                              value: v['id_variante'].toString(),
-                              child: Text('${v['sabor']}', overflow: TextOverflow.ellipsis, maxLines: 1,),
-                            );
-                          }).toList(),
-                          // 4. VALIDACIÓN ESTRICTA
-                          validator: (v) {
-                            if (_varianteSelId != null && _variantesSaboresFiltrados.isEmpty) {
-                              return 'Cambie el tamaño';
-                            }
-                            return v == null ? 'Requerido' : null;
-                          },
-                        ),*/
-                        /*Row(
-                          children: [
-                            Switch(
-                              value: _doble,
-                              onChanged: (v) => setState(() => _doble = v),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text('Doble'),
-                            const SizedBox(width: 16),
-                            Text(
-                              _doble ? 'Seleccionado' : 'Sencillo',
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        DropdownButtonFormField<int>(
-                          value: _pisos,
-                          items: [1, 2, 3, 4]
-                              .map((e) => DropdownMenuItem(
-                                  value: e, child: Text(e.toString())))
-                              .toList(),
-                          onChanged: (val) => setState(() => _pisos = val!),
-                          decoration: const InputDecoration(
-                            labelText: 'Pisos',
-                            prefixIcon: Icon(Icons.layers_outlined),
-                          ),
-                        ),
-                        if (_tamanoSeleccionado == '150') ...[
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _baseSeleccionada,
-                            items: _bases
-                                .map((e) =>
-                                    DropdownMenuItem(value: e, child: Text(e)))
-                                .toList(),
-                            onChanged: (val) =>
-                                setState(() => _baseSeleccionada = val),
-                            decoration: const InputDecoration(
-                              labelText: 'Base',
-                              prefixIcon: Icon(Icons.inventory_2_outlined),
-                            ),
-                          ),
-                        ],*/
                       ],
                     ),
 
-                    // Sección: Diseño del pastel
+                    // Sección:  Exclusivo pasteles
+                    if(_categoriaProductoSel == 'Pasteles')
                     _SectionCard(
-                      title: 'Diseño del pastel',
+                      title: 'Configuración Exclusiva del Pastel ',
                       children: [
-                        /*Wrap(
+                        Text("Armado *", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade800)),
+                        Wrap(
                           spacing: 8,
                           runSpacing: 4,
-                          children: _disenos.keys.map((k) {
-                            final selected = _disenos[k] ?? false;
+                          children: _armadosList.map((armado) {
+                            // Es "selected" solo si coincide exactamente con nuestra variable única
+                            final bool isSelected = _armadoSeleccionado == armado;
+                            
                             return FilterChip(
-                              selected: selected,
-                              label: Text(k),
-                              onSelected: (val) =>
-                                  setState(() => _disenos[k] = val),
+                              selected: isSelected,
+                              label: Text(armado),
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  if (selected) {
+                                    // Si lo selecciona, reemplazamos el valor anterior
+                                    _armadoSeleccionado = armado;
+                                    _calcularTotales(); // Recalculamos totales y subtotal al cambiar armado
+                                  } else {
+                                    // Si lo deselecciona, podemos dejarlo en null o mantenerlo
+                                    _armadoSeleccionado = 'Sensillo';
+                                    _calcularTotales(); // Recalculamos totales y subtotal al cambiar armado
+                                  }
+                                });
+                              },
+                              // Estilos de La Estrella
                               shape: StadiumBorder(
                                 side: BorderSide(
-                                  color: selected
-                                      ? Colors.black87
-                                      : Colors.grey.shade300,
+                                  color: isSelected ? Colors.black87 : Colors.grey.shade300,
+                                  width: isSelected ? 1.5 : 1.0,
                                 ),
                               ),
                               selectedColor: Colors.grey.shade200,
-                              showCheckmark: false,
+                              showCheckmark: true, // Aquí sí conviene el checkmark para indicar opción única
                             );
                           }).toList(),
-                        ),*/
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _descripcionController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Descripción',
-                            alignLabelWithHint: true,
-                            prefixIcon: Icon(Icons.notes_outlined),
-                          ),
                         ),
-                        /*const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _saborSeleccionado,
-                          items: _sabores
-                              .map((e) =>
-                                  DropdownMenuItem(value: e, child: Text(e)))
-                              .toList(),
-                          onChanged: (val) => setState(() {
-                            _saborSeleccionado = val!;
-                          }),
-                          decoration: const InputDecoration(
-                            labelText: 'Sabor',
-                            prefixIcon: Icon(Icons.icecream_outlined),
-                          ),
-                        ),*/
+                        const SizedBox(height: 12),
+                        Text("Pisos *", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade800)),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: _pisosList.map((piso) {
+                            // Es "selected" solo si coincide exactamente con nuestra variable única
+                            final bool isSelected = _pisoSeleccionado == piso;
+                            
+                            return FilterChip(
+                              selected: isSelected,
+                              label: Text(piso),
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  if (selected) {
+                                    // Si lo selecciona, reemplazamos el valor anterior
+                                    _pisoSeleccionado = piso;
+                                    _calcularTotales(); // Recalculamos totales al cambiar piso
+                                  } else {
+                                    // Si lo deselecciona, podemos dejarlo en null o mantenerlo
+                                    _pisoSeleccionado = '1 Piso';
+                                    _calcularTotales(); // Recalculamos totales al cambiar piso
+                                  }
+                                });
+                              },
+                              // Estilos de La Estrella
+                              shape: StadiumBorder(
+                                side: BorderSide(
+                                  color: isSelected ? Colors.black87 : Colors.grey.shade300,
+                                  width: isSelected ? 1.5 : 1.0,
+                                ),
+                              ),
+                              selectedColor: Colors.grey.shade200,
+                              showCheckmark: true, // Aquí sí conviene el checkmark para indicar opción única
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        Text("Diseño Principal *", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade800)),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: _disenoList.map((diseno) {
+                            // Es "selected" solo si coincide exactamente con nuestra variable única
+                            final bool isSelected = _disenoSeleccionado == diseno;
+                            
+                            return FilterChip(
+                              selected: isSelected,
+                              label: Text(diseno),
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  if (selected) {
+                                    // Si lo selecciona, reemplazamos el valor anterior
+                                    _disenoSeleccionado = diseno;
+                                  } else {
+                                    // Si lo deselecciona, podemos dejarlo en null o mantenerlo
+                                    _disenoSeleccionado = ''; 
+                                  }
+                                });
+                              },
+                              // Estilos de La Estrella
+                              shape: StadiumBorder(
+                                side: BorderSide(
+                                  color: isSelected ? Colors.black87 : Colors.grey.shade300,
+                                  width: isSelected ? 1.5 : 1.0,
+                                ),
+                              ),
+                              selectedColor: Colors.grey.shade200,
+                              showCheckmark: true, // Aquí sí conviene el checkmark para indicar opción única
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+
+                    // Sección: Diseño Perzonalizado (puede ser para cualquier producto, pero es más común en pasteles)
+                    _SectionCard(
+                      title: 'Diseño Personalizado',
+                      children: [
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _mensajeController,
                           maxLines: 2,
                           decoration: const InputDecoration(
-                            labelText: 'Mensaje (en el pastel)',
+                            labelText: 'Mensaje o Dedicatoria Corta (Opcional)',
                             alignLabelWithHint: true,
                             prefixIcon: Icon(Icons.edit_note_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _descripcionController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Notas / Instrucciones Adicionales (Opcional)',
+                            alignLabelWithHint: true,
+                            prefixIcon: Icon(Icons.notes_outlined),
                           ),
                         ),
                       ],
@@ -607,26 +716,59 @@ class _PedidoScreenState extends State<PedidoScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _domicilioController,
-                          decoration: const InputDecoration(
-                            labelText: 'Domicilio',
-                            prefixIcon: Icon(Icons.location_on_outlined),
-                          ),
+                        Row(
+                          children: [
+                            Switch(
+                              value: _tipoEntrega,
+                              onChanged: (v) => setState(() {
+                                _tipoEntrega = v;
+                              }),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('Entrega en'),
+                            const SizedBox(width: 16),
+                            Text(
+                              _tipoEntrega ? 'DOMICILIO' : 'ESTÁ SUCURSAL',
+                              style: TextStyle(color: const Color.fromARGB(255, 182, 108, 225)),
+                            ),
+                          ],
                         ),
+                        if(_tipoEntrega)
+                        ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _domicilioController,
+                            decoration: const InputDecoration(
+                              labelText: 'Domicilio',
+                              prefixIcon: Icon(Icons.location_on_outlined),
+                            ),
+                            validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          ),
+                        ],
                       ],
                     ),
-
 
                     // Sección: Precio
                     _SectionCard(
                       title: 'Precio del pastel',
                       children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _TotalTile(
+                                label: 'Subtotal \$',
+                                value: _subtotal,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
                         TextFormField(
-                          controller: _depositoController,
+                          controller: _otrosCargosController,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Depósito',
+                            labelText: 'Otros cargos',
                             prefixIcon: Icon(Icons.attach_money_outlined),
                           ),
                           onChanged: (_) => _calcularTotales(),
@@ -636,7 +778,7 @@ class _PedidoScreenState extends State<PedidoScreen> {
                           controller: _fleteController,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Flete',
+                            labelText: 'Flete *',
                             prefixIcon: Icon(Icons.local_shipping_outlined),
                           ),
                           onChanged: (_) => _calcularTotales(),
@@ -646,7 +788,7 @@ class _PedidoScreenState extends State<PedidoScreen> {
                           controller: _anticipoController,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Anticipo',
+                            labelText: 'Anticipo *',
                             prefixIcon: Icon(Icons.savings_outlined),
                           ),
                           onChanged: (_) => _calcularTotales(),
@@ -693,8 +835,98 @@ class _PedidoScreenState extends State<PedidoScreen> {
                           foregroundColor:
                               const WidgetStatePropertyAll(Colors.white),
                         ),
-                        onPressed: () {
-                          if (_formKey.currentState?.validate() ?? false) {
+                        onPressed: () async {
+                          if (_formKey.currentState!.validate()) {
+                            // 1. Recolectamos la información de los controladores
+                            final nuevoPedido = {
+                              // tabla pedidos
+                              //'id_pedido': '', //db
+                              //'folio': '', // db 
+                              'id_direccion': null, // mal formulado
+                              //'fecha_pedido': '', // current datetime
+                              // 1. Extraemos solo la parte de la fecha (YYYY-MM-DD)
+                              'fecha_entrega': _fechaEntrega != null 
+                                  ? _fechaEntrega!.toIso8601String().split('T')[0] 
+                                  : null, // 👈 Importante usar null en vez de ''
+                              // 2. Armamos la hora en formato 24h (HH:MM:00)
+                              'hora_entrega': _horaEntrega != null 
+                                  ? "${_horaEntrega!.hour.toString().padLeft(2, '0')}:${_horaEntrega!.minute.toString().padLeft(2, '0')}:00"
+                                  : null,
+                              'tipo_entrega': _tipoEntrega ? 'domicilio' : 'sucursal',
+                              //'estado': 'pendiente', // por defecto sería "pendiente" al crear un nuevo pedido
+                              'origen': 'sucursal', // dependiendo de dónde se esté creando el pedido
+                              'tipo_pedido': 'normal', // inecesario
+                              'subtotal': _subtotal, // solo de productos, sin cargos adicionales
+                              'descuento': double.tryParse(_otrosCargosController.text.trim()) ?? 0.0, // en este caso, usamos el campo de "otros cargos" para reflejar descuentos o cargos adicionales, dependiendo de si el valor es positivo o negativo cambiar si no
+                              'total': _total,
+                              'anticipo': double.tryParse(_anticipoController.text.trim()) ?? 0.0,
+                              'restante': _restante,
+                              'observaciones': 'Domicilio: ${_domicilioController.text.trim()} - Cliente: ${_nombreController.text.trim()} - Teléfono: ${_telefonoController.text.trim()}',
+                              'id_usuario': null, // depende de quien crea el pedido
+                            };
+
+                            
+
+                            try {
+                              // 1. Guardamos SIN enviar el campo 'folio'
+                              final respuesta = await supabase.from('pedidos').insert(
+                                nuevoPedido
+                              ).select().single(); // 👈 El select().single() es clave para que nos devuelva la fila
+
+                              // 2. Extraemos el folio generado
+                              final folioOficial = respuesta['folio'];
+
+                              final nuevoPedidoDetalles = {
+                                // tabla detalle_pedidos
+                                //'id_detalle': '', //db
+                                'id_pedido': respuesta['id_pedido'], //db anterior
+                                'id_variante': _varianteSelId ?? '',
+                                'cantidad': '1',
+                                'precio_unitario': _subtotal, // el subtotal refleja el precio del producto seleccionado sin cargos adicionales, por lo que es un buen candidato para ser el precio unitario en el detalle
+                                'sabor': _saborSeleccionado,
+                                'dedicatoria': _mensajeController.text.trim(),
+                                'observaciones': 'Descripción: ${_descripcionController.text.trim()}',
+                              };
+
+                              print('nuevoPedidoDetalles: $nuevoPedidoDetalles');
+
+                              try {
+                                // 3. Guardamos el detalle del pedido
+                                await supabase.from('detalle_pedido').insert(
+                                  nuevoPedidoDetalles
+                                );
+
+                                if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Pedido guardado. Folio: $folioOficial'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                // Limpiamos o cerramos la pantalla
+                                Navigator.pop(context); 
+                              }
+                              } catch (e) {
+                                // Si falla guardar el detalle, podríamos considerar eliminar el pedido para no dejar datos huérfanos, o manejarlo de otra forma según la lógica de negocio
+                                await supabase.from('pedidos').delete().eq('id_pedido', respuesta['id_pedido']);
+
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
+                                  );
+                                }
+                              }
+                              
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
+                                );
+                              }
+                            }
+
+                            print('Nuevo pedido a guardar: $nuevoPedido');
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text('Folio confirmado')),
@@ -707,11 +939,12 @@ class _PedidoScreenState extends State<PedidoScreen> {
                             );
                           }
                         },
-                        child: const Text('Confirmar Folio'),
+                        child: const Text('Resumen del Pedido'),
                       ),
                     ),
                     const SizedBox(height: 24),
                   ],
+                  ),
                 ),
               ),
             ),
