@@ -73,6 +73,7 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/logo_ticket.png
     - assets/pasteles/
     - assets/postres/
     - assets/reposteria/

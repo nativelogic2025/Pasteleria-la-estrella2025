@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:pos_pasteleria_la_estrella/screens/ventas/producto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import './resumen_pedido.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -838,6 +842,19 @@ class _PedidoScreenState extends State<PedidoScreen> {
                         onPressed: () async {
                           if (_formKey.currentState!.validate()) {
                             // 1. Recolectamos la información de los controladores
+                            final datos = {
+                              'cliente': _nombreController.text.trim(),
+                              'telefono': _telefonoController.text.trim(),
+                              'nombre_producto': _productos.firstWhere((p) => p['id_producto'].toString() == _productoSelId)['nombre'],
+                              'tamaño': _variantes.firstWhere((v) => v['id_variante'].toString() == _varianteSelId)['tamaño'],
+                              'flete': double.tryParse(_fleteController.text.trim()) ?? 0.0,
+                              'armado': _armadoSeleccionado,
+                              'piso': _pisoSeleccionado,
+                              'diseno': _disenoSeleccionado,
+                              'categoria': _categoriaProductoSel,
+                              'direccion': _domicilioController.text.trim(),
+                            };
+
                             final nuevoPedido = {
                               // tabla pedidos
                               //'id_pedido': '', //db
@@ -865,72 +882,30 @@ class _PedidoScreenState extends State<PedidoScreen> {
                               'id_usuario': null, // depende de quien crea el pedido
                             };
 
-                            
-
-                            try {
-                              // 1. Guardamos SIN enviar el campo 'folio'
-                              final respuesta = await supabase.from('pedidos').insert(
-                                nuevoPedido
-                              ).select().single(); // 👈 El select().single() es clave para que nos devuelva la fila
-
-                              // 2. Extraemos el folio generado
-                              final folioOficial = respuesta['folio'];
-
-                              final nuevoPedidoDetalles = {
+                            final nuevoPedidoDetalles = {
                                 // tabla detalle_pedidos
                                 //'id_detalle': '', //db
-                                'id_pedido': respuesta['id_pedido'], //db anterior
+                                //'id_pedido': respuesta['id_pedido'], //db anterior
                                 'id_variante': _varianteSelId ?? '',
                                 'cantidad': '1',
                                 'precio_unitario': _subtotal, // el subtotal refleja el precio del producto seleccionado sin cargos adicionales, por lo que es un buen candidato para ser el precio unitario en el detalle
                                 'sabor': _saborSeleccionado,
                                 'dedicatoria': _mensajeController.text.trim(),
-                                'observaciones': 'Descripción: ${_descripcionController.text.trim()}',
+                                'observaciones': _descripcionController.text.trim(),
                               };
 
-                              print('nuevoPedidoDetalles: $nuevoPedidoDetalles');
+                            //Abrir el modal de resumen con los datos actuales (sin folio ni nombre de producto, ya que eso se genera al guardar en la base de datos)
+                            mostrarModalResumen(
+                              context: context,
+                              datos: datos,
+                              pedido: nuevoPedido,
+                              pedido_detalle: nuevoPedidoDetalles,
+                            );
 
-                              try {
-                                // 3. Guardamos el detalle del pedido
-                                await supabase.from('detalle_pedido').insert(
-                                  nuevoPedidoDetalles
-                                );
-
-                                if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('✅ Pedido guardado. Folio: $folioOficial'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                                // Limpiamos o cerramos la pantalla
-                                Navigator.pop(context); 
-                              }
-                              } catch (e) {
-                                // Si falla guardar el detalle, podríamos considerar eliminar el pedido para no dejar datos huérfanos, o manejarlo de otra forma según la lógica de negocio
-                                await supabase.from('pedidos').delete().eq('id_pedido', respuesta['id_pedido']);
-
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
-                                  );
-                                }
-                              }
-                              
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
-                                );
-                              }
-                            }
-
-                            print('Nuevo pedido a guardar: $nuevoPedido');
-
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            /*ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text('Folio confirmado')),
-                            );
+                            );*/
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
