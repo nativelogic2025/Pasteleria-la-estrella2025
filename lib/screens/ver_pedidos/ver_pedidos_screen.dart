@@ -1,5 +1,6 @@
 import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
+import '../servicios/supabase_client.dart';
 
 // ⬇️ importa tu pantalla de consulta
 import 'ver_pedido_consulta.dart';
@@ -53,46 +54,117 @@ class VerPedidosScreen extends StatefulWidget {
 }
 
 class _VerPedidosScreenState extends State<VerPedidosScreen> {
+  List<PedidoEvent> _todos = [];
+  bool _loading = true;
   // Estado de filtros / búsqueda
   String _filtroTipo = 'Todos';
   String _buscar = ''; // ⬅️ ahora busca folio/cliente/teléfono
   DateTime _mesActual = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime? _diaSeleccionado;
 
-  // Datos de ejemplo (ajusta a tu fuente real)
-  final List<PedidoEvent> _todos = [
-    PedidoEvent(
-      fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 21, 22, 0),
-      folio: 'A-301',
-      cliente: 'Implementación de Soluciones IoT',
-      telefono: '771-123-4567',
-      restante: 250.00,
-      estado: PedidoEstado.hecho,
-    ),
-    PedidoEvent(
-      fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 8, 9, 30),
-      folio: 'A-204',
-      cliente: 'ACME S.A.',
-      telefono: '771-555-1000',
-      restante: 0.00,
-      estado: PedidoEstado.entregado,
-    ),
-    PedidoEvent(
-      fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 10, 16, 0),
-      folio: 'B-115',
-      cliente: 'Proyecto: Almacén 3',
-      telefono: '772-888-2222',
-      restante: 120.00,
-      estado: PedidoEstado.pendiente,
-    ),
-    PedidoEvent(
-      fechaHora: DateTime(DateTime.now().year, DateTime.now().month, 3, 12, 15),
-      folio: 'C-778',
-      cliente: 'InnoTech',
-      telefono: '771-000-7788',
-      restante: 50.00,
-      estado: PedidoEstado.pendiente,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  // ---------- Data (Supabase) ----------
+  // 1. Cargar productos de la categoría
+  Future<void> _cargar() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    try {
+      // Usamos _mesActual (la variable que cambia cuando tocas las flechas)
+      final inicioMes = DateTime(_mesActual.year, _mesActual.month, 1);
+      final finMesSiguiente = DateTime(_mesActual.year, _mesActual.month + 2, 0); 
+
+      // Convertimos a formato SQL (YYYY-MM-DD)
+      final strInicio = inicioMes.toIso8601String().split('T')[0];
+      final strFin = finMesSiguiente.toIso8601String().split('T')[0];
+
+      // 1. Preparamos la consulta base (sin el filtro de estado todavía)
+      var query = supabase.from('pedidos').select('''
+        fecha_entrega,
+        hora_entrega,
+        folio,
+        clientes(nombre, telefono),
+        restante,
+        estado
+      ''')
+      // 👇 AGREGA ESTOS DOS FILTROS DE RANGO DE FECHA
+      .gte('fecha_entrega', strInicio) // gte = Greater Than or Equal (Mayor o igual a)
+      .lte('fecha_entrega', strFin);   // lte = Less Than or Equal (Menor o igual a)
+
+      // 2. Aplicamos el filtro de estado SOLO si no es "Todos"
+      if (_filtroTipo == 'Pendientes') {
+        query = query.eq('estado', 'pendiente');
+      } else if (_filtroTipo == 'Completados') {
+        query = query.eq('estado', 'entregado');
+      } 
+      // Si es "Todos", simplemente no agregamos el .eq() y traerá toda la tabla.
+
+      // 3. Ejecutamos la consulta ordenando por fecha
+      final respuestaSupabase = await query.order('fecha_entrega', ascending: false);
+
+      if (!mounted) return;
+
+      // 4. MAPEO DE DATOS: Convertimos los Mapas crudos a objetos PedidoEvent
+      final List<PedidoEvent> listaMapeada = (respuestaSupabase as List<dynamic>).map((fila) {
+        
+        // A) Manejo de relaciones (Join de clientes):
+        // Supabase devuelve los joins como un mapa anidado.
+        final clienteMap = fila['clientes'] as Map<String, dynamic>?;
+        final nombreCliente = clienteMap?['nombre']?.toString() ?? 'Cliente Mostrador';
+        final telefonoCliente = clienteMap?['telefono']?.toString() ?? 'Sin teléfono';
+
+        // B) Fusión de Fecha y Hora:
+        // Concatenamos "YYYY-MM-DD" con "HH:MM:SS" para crear un solo DateTime
+        final fechaStr = fila['fecha_entrega']?.toString() ?? DateTime.now().toString().split(' ')[0];
+        final horaStr = fila['hora_entrega']?.toString() ?? '00:00:00';
+        final fechaHoraObjeto = DateTime.tryParse('$fechaStr $horaStr') ?? DateTime.now();
+
+        // C) Mapeo del Enum de estado:
+        PedidoEstado estadoEnum;
+        switch (fila['estado']?.toString().toLowerCase()) {
+          case 'entregado':
+            estadoEnum = PedidoEstado.entregado;
+            break;
+          case 'hecho':
+            estadoEnum = PedidoEstado.hecho;
+            break;
+          default:
+            estadoEnum = PedidoEstado.pendiente;
+        }
+
+        // D) Construimos y retornamos el objeto final
+        return PedidoEvent(
+          fechaHora: fechaHoraObjeto,
+          folio: fila['folio']?.toString() ?? 'S/F',
+          cliente: nombreCliente,
+          telefono: telefonoCliente,
+          restante: double.tryParse(fila['restante']?.toString() ?? '0') ?? 0.0,
+          estado: estadoEnum,
+        );
+        
+      }).toList(); // 👈 El .toList() es vital para convertir el Iterable a una Lista real
+
+      setState(() {
+        _todos = listaMapeada; // 👈 Ahora _todos recibe puros PedidoEvent reales
+        _loading = false;
+      });
+
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _todos = []; 
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar pedidos: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,160 +181,209 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
         elevation: 1,
       ),
       backgroundColor: Colors.white,
-      body: ListView(
+      body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          // =======================
-          // LÍNEA DE TIEMPO
-          // =======================
-          _CardWrap(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Filtros de la cabecera
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  runSpacing: 8,
+        child: Column(
+          children: [
+            // =======================
+            // LÍNEA DE TIEMPO
+            // =======================
+            Expanded( // ⬅️ 3. Obligamos a esta tarjeta a tomar el espacio libre superior
+              child: _CardWrap(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _FiltroDropdown<String>(
-                      value: _filtroTipo,
-                      items: const ['Todos', 'Pendientes', 'Completados'],
-                      onChanged: (v) => setState(() => _filtroTipo = v!),
-                      label: 'Estado',
-                    ),
-                    SizedBox(
-                      width: 340,
-                      child: TextField(
-                        onChanged: (v) => setState(() => _buscar = v.trim()),
-                        decoration: InputDecoration(
-                          hintText: 'Buscar por folio, cliente o teléfono',
-                          prefixIcon: const Icon(Icons.search),
-                          isDense: true,
-                          filled: true,
-                          fillColor: const Color(0xFFF6F6F6),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFE6E6E6)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFE6E6E6)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Colors.black87, width: 1.2),
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      // 1. Esto alinea los elementos verticalmente por el centro
+                      crossAxisAlignment: WrapCrossAlignment.center, 
+                      runSpacing: 8,
+                      children: [
+                        // 2. Le damos una altura fija al Dropdown
+                        SizedBox(
+                          height: 48, 
+                          child: _FiltroDropdown<String>(
+                            value: _filtroTipo,
+                            items: const ['Todos', 'Pendientes', 'Completados'],
+                            onChanged: (v) => setState(() => _filtroTipo = v!),
+                            label: 'Estado',
                           ),
                         ),
-                      ),
+                        SizedBox(width: 8),                    
+                        // 3. Le damos la MISMA altura fija al TextField
+                        SizedBox(
+                          width: 340,
+                          height: 48, 
+                          child: TextField(
+                            onChanged: (v) => setState(() => _buscar = v.trim()),
+                            // 4. Centramos el texto verticalmente para que no se pegue arriba
+                            textAlignVertical: TextAlignVertical.center, 
+                            decoration: InputDecoration(
+                              hintText: 'Buscar por folio, cliente o teléfono',
+                              prefixIcon: const Icon(Icons.search),
+                              // 5. Ajustamos el padding interno para respetar la altura de 48px
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              filled: true,
+                              fillColor: const Color(0xFFF6F6F6),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFE6E6E6)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFE6E6E6)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Colors.black87, width: 1.2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+
+                    Expanded(
+                      child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Lista agrupada por fecha
+                              ...eventosPorDia.entries.map((entry) {
+                                final fecha = entry.key;
+                                final eventos = entry.value;
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _formatearFechaLarga(fecha),
+                                      style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ...eventos.map((e) => _TimelineTile(
+                                          event: e,
+                                          onEditar: () => _abrirEditar(context, e),
+                                        )),
+                                  ],
+                                );
+                              }),
+
+                              if (eventosPorDia.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 24),
+                                child: Center(
+                                  child: Text(
+                                    'No hay pedidos para este mes.',
+                                    style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                const Divider(height: 1),
+              ),
+            ),
 
-                // Lista agrupada por fecha
-                ...eventosPorDia.entries.map((entry) {
-                  final fecha = entry.key;
-                  final eventos = entry.value;
+            const SizedBox(height: 16),
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // =======================
+            // CALENDARIO
+            // =======================
+            _CardWrap(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      const SizedBox(height: 16),
                       Text(
-                        _formatearFechaLarga(fecha),
+                        'Calendario',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: Colors.black87,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      ...eventos.map((e) => _TimelineTile(
-                            event: e,
-                            onEditar: () => _abrirEditar(context, e),
-                          )),
+                      /*const Spacer(),
+                      _FiltroDropdown<String>(
+                        value: 'Todos los pedidos',
+                        items: const ['Todos los pedidos'],
+                        onChanged: (_) {},
+                        label: 'Todos los pedidos',
+                        dense: true,
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Acción: Nuevo evento')),
+                          );
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A41FF),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                        child: const Text('Nuevo evento'),
+                      ),*/
                     ],
-                  );
-                }),
-
-                if (eventosPorDia.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text(
-                        'No hay pedidos que coincidan con el filtro.',
-                        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                      ),
-                    ),
                   ),
-              ],
+                  const SizedBox(height: 8),
+                  _MonthHeader(
+                    month: _mesActual,
+                    onPrev: () {
+                      setState(() {
+                        _mesActual = DateTime(_mesActual.year, _mesActual.month - 1);
+                        _diaSeleccionado = null;
+                      });
+                      // 👇 Obligamos a Supabase a traer los datos del nuevo mes
+                      _cargar(); 
+                    },
+                    onNext: () {
+                      setState(() {
+                        _mesActual = DateTime(_mesActual.year, _mesActual.month + 1);
+                        _diaSeleccionado = null;
+                      });
+                      // 👇 Obligamos a Supabase a traer los datos del nuevo mes
+                      _cargar(); 
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _CalendarGrid(
+                    month: _mesActual,
+                    events: eventosFiltrados,
+                    selectedDay: _diaSeleccionado,
+                    onTapDay: (day) {
+                      setState(() {
+                        // Si el usuario toca el MISMO día que ya estaba seleccionado, apagamos el filtro
+                        if (_diaSeleccionado != null &&
+                            _diaSeleccionado!.year == day.year &&
+                            _diaSeleccionado!.month == day.month &&
+                            _diaSeleccionado!.day == day.day) {
+                          _diaSeleccionado = null;
+                        } else {
+                          // Si toca un día diferente, lo seleccionamos
+                          _diaSeleccionado = day;
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // =======================
-          // CALENDARIO
-          // =======================
-          _CardWrap(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Calendario',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const Spacer(),
-                    _FiltroDropdown<String>(
-                      value: 'Todos los pedidos',
-                      items: const ['Todos los pedidos'],
-                      onChanged: (_) {},
-                      label: 'Todos los pedidos',
-                      dense: true,
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Acción: Nuevo evento')),
-                        );
-                      },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A41FF),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                      child: const Text('Nuevo evento'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _MonthHeader(
-                  month: _mesActual,
-                  onPrev: () => setState(() {
-                    _mesActual = DateTime(_mesActual.year, _mesActual.month - 1);
-                  }),
-                  onNext: () => setState(() {
-                    _mesActual = DateTime(_mesActual.year, _mesActual.month + 1);
-                  }),
-                ),
-                const SizedBox(height: 8),
-                _CalendarGrid(
-                  month: _mesActual,
-                  events: _todos,
-                  onTapDay: (day) {
-                    // cuando toques un día, podrías navegar o filtrar
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -288,6 +409,15 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
       list = list.where((e) => e.estado == PedidoEstado.pendiente).toList();
     } else if (_filtroTipo == 'Completados') {
       list = list.where((e) => e.estado == PedidoEstado.entregado).toList();
+    }
+
+    // Filtro por día seleccionado en el calendario
+    if (_diaSeleccionado != null) {
+      list = list.where((e) {
+        return e.fechaHora.year == _diaSeleccionado!.year &&
+              e.fechaHora.month == _diaSeleccionado!.month &&
+              e.fechaHora.day == _diaSeleccionado!.day;
+      }).toList();
     }
 
     // Orden cronológico asc
@@ -556,11 +686,13 @@ class _CalendarGrid extends StatelessWidget {
   final DateTime month; // primer día del mes
   final List<PedidoEvent> events;
   final void Function(DateTime day) onTapDay;
+  final DateTime? selectedDay;
 
   const _CalendarGrid({
     required this.month,
     required this.events,
     required this.onTapDay,
+    this.selectedDay,
   });
 
   @override
@@ -573,13 +705,23 @@ class _CalendarGrid extends StatelessWidget {
     final totalCells = leadingEmpty + daysInMonth;
     final rows = (totalCells / 7).ceil();
 
-    final Set<int> daysWithEvents = events
-        .where((e) => e.fechaHora.month == month.month && e.fechaHora.year == month.year)
-        .map((e) => e.fechaHora.day)
-        .toSet();
+    final Map<int, List<PedidoEvent>> eventosDelMes = {};
+    for (final e in events) {
+      if (e.fechaHora.month == month.month && e.fechaHora.year == month.year) {
+        eventosDelMes.putIfAbsent(e.fechaHora.day, () => []).add(e);
+      }
+    }
 
     final today = DateTime.now();
     final headers = const ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+    Color getColorPorEstado(PedidoEstado estado) {
+      switch (estado) {
+        case PedidoEstado.entregado: return const Color(0xFF1DB954); // Verde
+        case PedidoEstado.hecho: return const Color(0xFFFFC107);     // Amarillo
+        case PedidoEstado.pendiente: return const Color(0xFFE53935); // Rojo
+      }
+    }
 
     return Column(
       children: [
@@ -588,7 +730,7 @@ class _CalendarGrid extends StatelessWidget {
           children: headers
               .map((h) => Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: Center(
                           child: Text(h,
                               style: const TextStyle(
@@ -613,30 +755,35 @@ class _CalendarGrid extends StatelessWidget {
                   final date = DateTime(month.year, month.month, inMonth ? dayNumber : 1);
 
                   final isToday = inMonth &&
-                      date.year == today.year &&
-                      date.month == today.month &&
-                      date.day == today.day;
+                    date.year == today.year &&
+                    date.month == today.month &&
+                    date.day == today.day;
 
-                  final hasEvent = inMonth && daysWithEvents.contains(dayNumber);
+                  final isSelected = selectedDay != null &&
+                    date.year == selectedDay!.year &&
+                    date.month == selectedDay!.month &&
+                    date.day == selectedDay!.day;
+
+                  final eventosDelDia = inMonth ? (eventosDelMes[dayNumber] ?? []) : [];
 
                   return Expanded(
                     child: InkWell(
                       onTap: inMonth ? () => onTapDay(date) : null,
                       child: Container(
-                        height: 64,
+                        height: 40,
                         decoration: BoxDecoration(
                           border: Border(
                             right: BorderSide(color: Colors.grey.shade200),
                             bottom: BorderSide(color: Colors.grey.shade200),
                           ),
-                          color: Colors.white,
+                          color: isSelected ? const Color(0xFFE8EAF6) : Colors.white,
                         ),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
                             Positioned(
-                              top: 8,
-                              right: 8,
+                              top: 4,
+                              right: 4,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
@@ -655,18 +802,24 @@ class _CalendarGrid extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (hasEvent)
-                              const Positioned(
-                                bottom: 10,
-                                child: SizedBox(
-                                  width: 6,
-                                  height: 6,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: Color(0xFF1A41FF),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
+                            if (eventosDelDia.isNotEmpty)
+                              Positioned(
+                                bottom: 4,
+                                child: Wrap(
+                                  spacing: 2, // Espacio entre cada puntito
+                                  alignment: WrapAlignment.center,
+                                  // Usamos .take(4) para evitar que si hay 20 pedidos se desborde la celda.
+                                  // Máximo mostrará 4 puntitos visualmente.
+                                  children: eventosDelDia.take(4).map((e) {
+                                    return Container(
+                                      width: 5, // Un poco más pequeños para que quepan varios
+                                      height: 5,
+                                      decoration: BoxDecoration(
+                                        color: getColorPorEstado(e.estado),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    );
+                                  }).toList(),
                                 ),
                               ),
                           ],
