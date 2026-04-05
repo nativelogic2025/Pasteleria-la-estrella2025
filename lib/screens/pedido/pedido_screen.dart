@@ -28,13 +28,18 @@ class _PedidoScreenState extends State<PedidoScreen> {
   final _descripcionController = TextEditingController();
   final _mensajeController = TextEditingController();
   final _otrosCargosController = TextEditingController();
-
-  // Valores por defecto
-
-  double _subtotal = 0;
+  final SearchController _productoSearchController = SearchController();
 
   DateTime? _fechaEntrega;
   TimeOfDay? _horaEntrega;
+  String? _categoriaProductoSel;
+  String? _productoSelId;
+  String? _varianteSelId;
+
+  // Valores por defecto
+  double _total = 0;
+  double _restante = 0;
+  double _subtotal = 0;
 
   // Producto
   bool _ingredienteExtra = false;
@@ -45,11 +50,6 @@ class _PedidoScreenState extends State<PedidoScreen> {
   String _armadoSeleccionado = 'Sensillo';
   String _disenoSeleccionado = 'Norma (Crema/Betún)';
   String _pisoSeleccionado = '1 Piso';
-  
-
-  String? _categoriaProductoSel;
-  String? _productoSelId;
-  String? _varianteSelId;
 
   List<String> _sabores = [];
   List<Map<String, dynamic>> _variantesFiltradas1 = [];
@@ -97,9 +97,6 @@ class _PedidoScreenState extends State<PedidoScreen> {
       SnackBar(content: Text(msg), backgroundColor: Colors.red),
     );
   }
-
-  double _total = 0;
-  double _restante = 0;
 
   void _calcularTotales() {
     _subtotal = _calcularSubtotal();
@@ -199,6 +196,40 @@ class _PedidoScreenState extends State<PedidoScreen> {
       }
       return false;
     }).toList();
+  }
+
+  void _limpiarFormulario() {
+    setState(() {
+      // 1. Limpiamos los controladores de texto
+      _nombreController.clear();
+      _telefonoController.clear();
+      _domicilioController.clear();
+      _fleteController.clear();
+      _anticipoController.clear();
+      _descripcionController.clear();
+      _mensajeController.clear();
+      _otrosCargosController.clear();
+      _productoSearchController.clear();
+
+      // 2. Reiniciamos variables y selecciones
+      _productoSelId = null;
+      _varianteSelId = null;
+      _categoriaProductoSel = null;
+      _subtotal = 0;
+      _restante = 0;
+      _total = 0;  
+      _saborSeleccionado = '';
+      _armadoSeleccionado = 'Sensillo';
+      _disenoSeleccionado = 'Norma (Crema/Betún)';
+      _pisoSeleccionado = '1 Piso';
+      _ingredienteExtra = false;
+      _tipoEntrega = false;
+      _fechaEntrega = null;
+      _horaEntrega = null;
+      _sabores = [];
+      _variantesFiltradas1 = [];
+      _variantesFiltradas2 = [];
+    });
   }
 
   @override
@@ -320,6 +351,7 @@ class _PedidoScreenState extends State<PedidoScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                                 SearchAnchor(
+                                  searchController: _productoSearchController,
                                   builder: (BuildContext context, SearchController controller) {
                                     // Si ya hay un producto seleccionado, mostramos su nombre en el campo
                                     if (_productoSelId != null && controller.text.isEmpty) {
@@ -900,6 +932,7 @@ class _PedidoScreenState extends State<PedidoScreen> {
                               datos: datos,
                               pedido: nuevoPedido,
                               pedido_detalle: nuevoPedidoDetalles,
+                              alTerminar: _limpiarFormulario,
                             );
 
                             /*ScaffoldMessenger.of(context).showSnackBar(
