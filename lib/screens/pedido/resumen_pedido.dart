@@ -188,15 +188,60 @@ void mostrarModalResumen({
                       onPressed: () async
                       {
                         try {
-                          // 1. Guardamos SIN enviar el campo 'folio'
+                          // 1. Buscamos al cliente (usando maybeSingle para que devuelva null pacíficamente si no existe)
+                          final clienteExistente = await supabase
+                              .from('clientes')
+                              .select()
+                              .eq('telefono', datos['telefono'].toString())
+                              .maybeSingle(); // 👈 El cambio clave que evita el crash
+
+                          int idClienteFinal; // Variable para almacenar el ID en memoria
+
+                          if (clienteExistente != null) {
+                            // ✅ EL CLIENTE EXISTE
+                            idClienteFinal = clienteExistente['id_cliente']; // Guardamos su ID de inmediato
+
+                            // Preparamos los cambios en un solo mapa para hacer una sola llamada a la BD
+                            Map<String, dynamic> actualizaciones = {};
+                            
+                            if (clienteExistente['nombre'] != datos['cliente'].toString()) {
+                              actualizaciones['nombre'] = datos['cliente'].toString();
+                            }
+                            if (clienteExistente['direccion'] != datos['direccion'].toString()) {
+                              actualizaciones['direccion'] = datos['direccion'].toString();
+                            }
+
+                            // Si hubo algún cambio, hacemos un solo UPDATE
+                            if (actualizaciones.isNotEmpty) {
+                              await supabase
+                                  .from('clientes')
+                                  .update(actualizaciones)
+                                  .eq('id_cliente', idClienteFinal);
+                            }
+
+                          } else {
+                            // ❌ EL CLIENTE NO EXISTE
+                            // Lo insertamos y le decimos a Supabase que nos devuelva la fila recién creada
+                            // (Aquí SÍ es seguro usar .single() porque acabamos de garantizar que se insertó una fila)
+                            final nuevoCliente = await supabase.from('clientes').insert({
+                              'nombre': datos['cliente'].toString(),
+                              'telefono': datos['telefono'].toString(),
+                              'direccion': datos['direccion'].toString(),
+                            }).select().single();
+
+                            idClienteFinal = nuevoCliente['id_cliente'];
+                          }
+
+                          // 2. Asignamos el ID al pedido de forma segura
+                          pedido['id_cliente'] = idClienteFinal;
+
+                          // 3. Guardamos el pedido y obtenemos el folio
                           final respuesta = await supabase.from('pedidos').insert(
                             pedido
-                          ).select().single(); // 👈 El select().single() es clave para que nos devuelva la fila
+                          ).select().single();
 
                           // 2. Extraemos el folio generado
                           final folio = respuesta['folio'];
-                          // Agregar el folio al detalle del pedido
-                          //pedido_detalle['folio'] = folio;
                           
                           try {
                             // 3. Guardamos el detalle del pedido

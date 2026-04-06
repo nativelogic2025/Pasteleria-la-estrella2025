@@ -457,22 +457,70 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
       ),
       builder: (_) => EditarPedidoSheet(
         event: e,
-        onGuardar: (nuevo) {
-          // Aquí actualizarías tu fuente de datos real (PB/SQLite/etc.)
-          final idx = _todos.indexWhere((x) => x.folio == e.folio);
-          if (idx != -1) {
-            setState(() => _todos[idx] = nuevo);
+        onGuardar: (nuevo) async {
+          try {
+            // 1. Mapeo limpio y seguro del Enum usando switch
+            String est;
+            switch (nuevo.estado) {
+              case PedidoEstado.pendiente:
+                est = 'pendiente';
+                break;
+              case PedidoEstado.hecho:
+                est = 'hecho';
+                break;
+              case PedidoEstado.entregado:
+                est = 'entregado';
+                break;
+            }
+
+            // 2. Primer UPDATE: Pedido
+            // 👈 AGREGA .select() ANTES DE .single()
+            final resp = await supabase.from('pedidos').update({
+              'estado': est,
+              'restante': nuevo.restante.toString(), // Asegúrate de que tu BD acepta texto aquí, o quita el .toString() si es numérico (double)
+            }).eq('folio', e.folio).select().single(); 
+
+            // 3. Segundo UPDATE: Cliente
+            // 👈 NO NECESITAS .single() AQUÍ porque no guardas la respuesta
+            await supabase.from('clientes').update({
+              'nombre': nuevo.cliente,
+              'telefono': nuevo.telefono,
+            }).eq('id_cliente', resp['id_cliente']);
+
+            // 4. Actualización Visual (Solo ocurre si la BD no arrojó errores)
+            final idx = _todos.indexWhere((x) => x.folio == e.folio);
+            if (idx != -1) {
+              setState(() => _todos[idx] = nuevo);
+            }
+            
+            // 5. Cierre y Éxito
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Pedido actualizado'), 
+                backgroundColor: Colors.green, // Un toque de color para el éxito
+              )
+            );
+
+          } catch (err) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error al guardar: $err'), 
+                backgroundColor: Colors.red,
+              ),
+            );
           }
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Pedido actualizado')));
         },
         onAbrirConsulta: () {
           Navigator.pop(context);
           // ⬇️ ahora abre la pantalla de consulta:
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const VerPedidoConsultaScreen()),
+            MaterialPageRoute(builder: (_) => 
+              VerPedidoConsultaScreen(
+                folio: e.folio
+              )
+            ),
           );
         },
       ),
@@ -598,7 +646,17 @@ class _TimelineTile extends StatelessWidget {
                 // Folio “clickable”
                 InkWell(
                   borderRadius: BorderRadius.circular(4),
-                  onTap: () {},
+                  onTap: () {
+                    // Abrir pantalla de consulta para este pedido
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => 
+                        VerPedidoConsultaScreen(
+                          folio: event.folio
+                        )
+                      ),
+                    );
+                  },
                   child: Text(
                     'Folio: ${event.folio}',
                     style: const TextStyle(
@@ -766,6 +824,19 @@ class _CalendarGrid extends StatelessWidget {
 
                   final eventosDelDia = inMonth ? (eventosDelMes[dayNumber] ?? []) : [];
 
+                  final eventosVisuales = List<PedidoEvent>.from(eventosDelDia);
+                  eventosVisuales.sort((a, b) {
+                    // Le damos un "peso" a cada estado (Menor número = Mayor prioridad visual)
+                    int prioridad(PedidoEstado estado) {
+                      switch (estado) {
+                        case PedidoEstado.pendiente: return 1; // 🔴 Máxima prioridad
+                        case PedidoEstado.hecho: return 2;     // 🟡 Media prioridad
+                        case PedidoEstado.entregado: return 3; // 🟢 Baja prioridad
+                      }
+                    }
+                    return prioridad(a.estado).compareTo(prioridad(b.estado));
+                  });
+
                   return Expanded(
                     child: InkWell(
                       onTap: inMonth ? () => onTapDay(date) : null,
@@ -802,7 +873,7 @@ class _CalendarGrid extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (eventosDelDia.isNotEmpty)
+                            if (eventosVisuales.isNotEmpty)
                               Positioned(
                                 bottom: 4,
                                 child: Wrap(
@@ -810,7 +881,7 @@ class _CalendarGrid extends StatelessWidget {
                                   alignment: WrapAlignment.center,
                                   // Usamos .take(4) para evitar que si hay 20 pedidos se desborde la celda.
                                   // Máximo mostrará 4 puntitos visualmente.
-                                  children: eventosDelDia.take(4).map((e) {
+                                  children: eventosVisuales.take(4).map((e) {
                                     return Container(
                                       width: 5, // Un poco más pequeños para que quepan varios
                                       height: 5,
@@ -916,6 +987,7 @@ class _EditarPedidoSheetState extends State<EditarPedidoSheet> {
                   Expanded(
                     child: TextFormField(
                       controller: _folioCtrl,
+                      readOnly: true,
                       decoration: const InputDecoration(
                         labelText: 'Folio',
                         filled: true,
