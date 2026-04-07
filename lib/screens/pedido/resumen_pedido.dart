@@ -93,8 +93,8 @@ void mostrarModalResumen({
                               _buildFilaDatos('Tipo de Pan', pedido_detalle['sabor'] ?? 'No aplica'),
                             if (datos['categoria'] == 'Pasteles') ...[
                               _buildFilaDatos('Tipo de Armado', datos['armado'] ?? 'Sin armado'),
-                              _buildFilaDatos('Numero de Piso', datos['piso'] ?? 'Sin piso'),
-                              _buildFilaDatos('Diseño', datos['diseno'] ?? 'Sin diseño'),
+                              _buildFilaDatos('Numero de Piso', datos['pisos'] ?? 'Sin piso'),
+                              _buildFilaDatos('Diseño', datos['diseño'] ?? 'Sin diseño'),
                             ],
                             _buildFilaDatos('Mensaje', pedido_detalle['dedicatoria'] ?? 'Sin mensaje'),
                             _buildFilaDatos('Notas', pedido_detalle['observaciones'] ?? 'Sin notas'),
@@ -147,7 +147,7 @@ void mostrarModalResumen({
 
                             _buildFilaDatos('Subtotal', pedido['subtotal'].toString()),
                             _buildFilaDatos('Otros Cargos', pedido['descuento'].toString()),
-                            _buildFilaDatos('Flete', datos['flete'].toString()),
+                            _buildFilaDatos('Flete', pedido['flete'].toString()),
                             _buildFilaDatos('Anticipo', pedido['anticipo'].toString()),
                             _buildFilaDatos('Total', pedido['total'].toString()),
 
@@ -204,10 +204,10 @@ void mostrarModalResumen({
                             // Preparamos los cambios en un solo mapa para hacer una sola llamada a la BD
                             Map<String, dynamic> actualizaciones = {};
                             
-                            if (clienteExistente['nombre'] != datos['cliente'].toString()) {
+                            if ((clienteExistente['nombre'] != datos['cliente'].toString()) && datos['cliente'].toString().isNotEmpty) {
                               actualizaciones['nombre'] = datos['cliente'].toString();
                             }
-                            if (clienteExistente['direccion'] != datos['direccion'].toString()) {
+                            if ((clienteExistente['direccion'] != datos['direccion'].toString()) && datos['direccion'].toString().isNotEmpty) {
                               actualizaciones['direccion'] = datos['direccion'].toString();
                             }
 
@@ -242,6 +242,16 @@ void mostrarModalResumen({
 
                           // 2. Extraemos el folio generado
                           final folio = respuesta['folio'];
+
+                          // Asociar detalles a pedido
+                          pedido_detalle['id_pedido'] = respuesta['id_pedido'];
+                          //Si es un pastel lleva estas caracteristicas
+                          if (datos['categoria'].toString() == 'Pasteles')
+                          {
+                            pedido_detalle['armado'] = datos['armado'].toString();
+                            pedido_detalle['pisos'] = datos['pisos'].toString();
+                            pedido_detalle['diseño'] = datos['diseño'].toString();
+                          }
                           
                           try {
                             // 3. Guardamos el detalle del pedido
@@ -250,12 +260,6 @@ void mostrarModalResumen({
                             );
 
                             if (context.mounted) {
-                              /*ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('✅ Pedido guardado. Folio: $folio'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );*/
                               // 1. Cerramos el modal actual (el de Resumen)
                               Navigator.pop(context);
 
@@ -273,7 +277,7 @@ void mostrarModalResumen({
                                 'tipoPan': pedido_detalle['sabor'].toString(),
                                 'tipoArmado': datos['armado'].toString(),
                                 'numeroPisos': datos['piso'].toString(),
-                                'diseño': datos['diseno'].toString(),
+                                'diseño': datos['diseño'].toString(),
                                 'mensaje': pedido_detalle['dedicatoria'].toString(),
                                 'notasAdicionales': pedido_detalle['observaciones'].toString(),
                                 'cliente': datos['cliente'].toString(),
@@ -282,7 +286,7 @@ void mostrarModalResumen({
                                 'horaEntrega': pedido['hora_entrega'].toString(),
                                 'direccionEntrega': datos['direccion'].toString(),
                                 'otrosCargos': pedido['descuento'],
-                                'flete': datos['flete'],
+                                'flete': pedido['flete'],
                                 'anticipo': pedido['anticipo'],
                                 'restoPorPagar': pedido['restante'],
                                 'logoBytes': logoBytes,

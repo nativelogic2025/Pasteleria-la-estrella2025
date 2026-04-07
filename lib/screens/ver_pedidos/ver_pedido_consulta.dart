@@ -2,57 +2,18 @@
 import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 
+import '../servicios/supabase_client.dart';
+
 /// Mantén el mismo enum que usas en VerPedidosScreen
 enum PedidoEstado { pendiente, hecho, entregado }
 
 class VerPedidoConsultaScreen extends StatefulWidget {
   // Opcional: datos de entrada para precargar la vista
-  final String? folio;
-  final String? nombre;     // ← no editable
-  final String? telefono;
-  final DateTime? fechaEntrega;
-  final TimeOfDay? horaEntrega;
-  final String? domicilio;
-  final String? producto;   // "Pastel"
-  final String? tamano;     // "6-8", ...
-  final int? pisos;
-  final bool? doble;
-  final String? base;
-  final List<String>? disenosSeleccionados; // ["Oblea", "Crema", ...]
-  final String? sabor;
-  final String? mensajeEnPastel;
-
-  // Precios actuales
-  final double? deposito;
-  final double? flete;
-  final double? anticipo;
-  final double? total;      // si no lo tienes, lo recalculo como deposito + flete
-  final double? restante;   // si no lo tienes, lo recalculo como total - anticipo
-
-  final PedidoEstado? estado;
+  final String folio;
 
   const VerPedidoConsultaScreen({
     super.key,
-    this.folio,
-    this.nombre,
-    this.telefono,
-    this.fechaEntrega,
-    this.horaEntrega,
-    this.domicilio,
-    this.producto,
-    this.tamano,
-    this.pisos,
-    this.doble,
-    this.base,
-    this.disenosSeleccionados,
-    this.sabor,
-    this.mensajeEnPastel,
-    this.deposito,
-    this.flete,
-    this.anticipo,
-    this.total,
-    this.restante,
-    this.estado,
+    required this.folio,
   });
 
   @override
@@ -62,119 +23,178 @@ class VerPedidoConsultaScreen extends StatefulWidget {
 class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controladores (nombre deshabilitado)
-  late final TextEditingController _nombreCtrl;
-  late final TextEditingController _telefonoCtrl;
-  late final TextEditingController _domicilioCtrl;
+  // Controladores 
+  final _telefonoCtrl = TextEditingController();
+  final _domicilioCtrl = TextEditingController();
+  final _otrosCargosCtrl = TextEditingController();
+  final _fleteCtrl = TextEditingController();
+  final _ajusteCtrl = TextEditingController();
 
-  // Precios “actuales” (sección igual que el formulario)
-  late final TextEditingController _depositoCtrl;
-  late final TextEditingController _fleteCtrl;
-  late final TextEditingController _anticipoCtrl;
+  Map<String, dynamic> _items = {};
+  bool _loading = true;
+
+  PedidoEstado _estado = PedidoEstado.pendiente;
+  String _folio = '';
+  String _cliente = '';
+  String _producto = '';
+  String _tipo_pan = '';
+  String _tamano = '';
+  String _pisos = '';
+  String _doble = '';
+  String _diseno = '';
+  String _mensaje = '';
+  String _notas = '';
+  DateTime? _fechaEntrega;
+  TimeOfDay? _horaEntrega;
+  double _subtotal = 0;
+  double _anticipo = 0;
 
   // Totales calculados “actuales”
   double _totalActual = 0;
   double _restanteActual = 0;
 
   // Sección NUEVA: actualización de precio (ajuste)
-  final _ajusteCtrl = TextEditingController(); // positivo o negativo
   double _totalNuevo = 0;
   double _restanteNuevo = 0;
-
-  // Estado
-  late PedidoEstado _estado;
-
-  // Otros campos de solo lectura
-  late final String _folio;
-  late final String _producto;
-  late final String _tamano;
-  late final int _pisos;
-  late final bool _doble;
-  late final String? _base;
-  late final List<String> _disenos;
-  late final String _sabor;
-  late final String _mensaje;
-  late final DateTime? _fechaEntrega;
-  late final TimeOfDay? _horaEntrega;
 
   @override
   void initState() {
     super.initState();
+    _cargar();
+  }
 
-    _folio     = widget.folio ?? 'A-000';
-    _nombreCtrl = TextEditingController(text: widget.nombre ?? 'Cliente Demo');
-    _telefonoCtrl = TextEditingController(text: widget.telefono ?? '771-000-0000');
-    _domicilioCtrl = TextEditingController(text: widget.domicilio ?? '');
+  // ---------- Data (Supabase) ----------
+  // 1. Cargar productos de la categoría
+  Future<void> _cargar() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
 
-    _producto = widget.producto ?? 'Pastel';
-    _tamano   = widget.tamano ?? '6-8';
-    _pisos    = widget.pisos ?? 1;
-    _doble    = widget.doble ?? false;
-    _base     = widget.base;
-    _disenos  = widget.disenosSeleccionados ?? const ['Oblea'];
-    _sabor    = widget.sabor ?? 'Chocolate';
-    _mensaje  = widget.mensajeEnPastel ?? '';
+    try {
+      // Supabase devuelve directamente una List<Map<String, dynamic>>
+      final Map<String, dynamic> res = await supabase
+          .from('pedidos')
+          .select('''
+            *, clientes(*), detalle_pedido(*, producto_variantes(*, productos(*, categorias(nombre))))
+          ''')
+          .eq('folio', widget.folio ?? '')
+          //.order('id_pedido', ascending: true);
+          .single();
 
-    _fechaEntrega = widget.fechaEntrega;
-    _horaEntrega  = widget.horaEntrega;
+      if (!mounted) return;
+      setState(() {
+        _items = res; // Guardamos la lista de mapas directamente
+        _inicializarVariables();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _items = {}; // Limpiamos la lista en caso de error
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar ${widget.folio}: $e')),
+      );
+    }
+  }
 
-    // Precios actuales
-    final dep = (widget.deposito ?? 300).toDouble();
-    final fle = (widget.flete ?? 50).toDouble();
-    final ant = (widget.anticipo ?? 100).toDouble();
+  void _inicializarVariables() {
+    _folio = widget.folio ?? '';
+    _cliente = _items['clientes']['nombre'];
+    _producto = _items['detalle_pedido'][0]['producto_variantes']['productos']['nombre'];
+    _tipo_pan = _items['detalle_pedido'][0]['sabor'];
+    _tamano = _items['detalle_pedido'][0]['producto_variantes']['tamaño'];
+    _pisos = _items['detalle_pedido'][0]['pisos'];
+    _doble = _items['detalle_pedido'][0]['armado'];
+    _diseno = _items['detalle_pedido'][0]['diseño'];
+    _mensaje = _items['detalle_pedido'][0]['dedicatoria'];
+    _notas = _items['detalle_pedido'][0]['observaciones'];
+    _subtotal = _items['subtotal'];
+    _anticipo = _items['anticipo'];
+    _totalActual = _items['total'];
+    _restanteActual = _items['restante'];
 
-    _depositoCtrl = TextEditingController(text: dep.toStringAsFixed(2));
-    _fleteCtrl    = TextEditingController(text: fle.toStringAsFixed(2));
-    _anticipoCtrl = TextEditingController(text: ant.toStringAsFixed(2));
+    _telefonoCtrl.text = _items['clientes']['telefono']?.toString() ?? '';
+    _domicilioCtrl.text = _items['clientes']['direccion']?.toString() ?? '';
+    
+    // Si tienes estos campos en BD, los cargas; si no, inician en '0'
+    _otrosCargosCtrl.text = _items['descuento']?.toString() ?? '0';
+    _fleteCtrl.text = _items['flete']?.toString() ?? '0';
+    _ajusteCtrl.text = '0'; // El ajuste siempre inicia en 0 al abrir la consulta
 
-    // Cálculo de actuales
-    _recalcularActuales();
+    // Inicializamos los nuevos totales iguales a los actuales para empezar
+    _totalNuevo = _totalActual;
+    _restanteNuevo = _restanteActual;
 
-    // Ajuste inicia en 0
-    _ajusteCtrl.text = '0.00';
-    _recalcularNuevos();
+    // 1. Nos aseguramos de convertirlos a String de forma segura
+    final String fechaStr = _items['fecha_entrega']?.toString() ?? '';
+    final String horaStr = _items['hora_entrega']?.toString() ?? '00:00:00';
 
-    _estado = widget.estado ?? PedidoEstado.pendiente;
+    // 2. Unimos los textos ("2026-04-15 14:30:00") y tratamos de parsearlo
+    final DateTime fechaHoraCompleta = DateTime.tryParse('$fechaStr $horaStr') ?? DateTime.now();
 
-    // Listeners para recalcular al vuelo
-    _depositoCtrl.addListener(_recalcularActuales);
-    _fleteCtrl.addListener(_recalcularActuales);
-    _anticipoCtrl.addListener(() {
-      _recalcularActuales();
-      _recalcularNuevos();
+    // 3. ¡Asignamos los valores limpios!
+    _fechaEntrega = fechaHoraCompleta; // DateTime toma la fecha completa
+    _horaEntrega = TimeOfDay.fromDateTime(fechaHoraCompleta); // Extrae solo la hora y minuto
+
+    String est = _items['estado'].toString().toLowerCase();
+    switch (est) {
+      case 'entregado':
+        _estado = PedidoEstado.entregado;
+        break;
+      case 'hecho':
+        _estado = PedidoEstado.hecho;
+        break;
+      case 'pendiente':
+      default: // El default es vital: si la BD devuelve algo raro, no explota la app
+        _estado = PedidoEstado.pendiente;
+        break;
+    }
+  }
+
+  // 👇 2. FUNCIÓN PARA RECALCULAR LOS TOTALES DINÁMICAMENTE
+  void _calcularNuevosTotales() {
+    setState(() {
+      // Extraemos el valor escrito, si escriben basura o está vacío, tomamos 0
+      final ajuste = double.tryParse(_ajusteCtrl.text) ?? 0.0;
+      final otrosCargos = _items['descuento'] ?? 0.0;
+      final flete = _items['flete'] ?? 0.0;
+      final otrosCargosNew = double.tryParse(_otrosCargosCtrl.text) ?? 0.0;
+      final fleteNew = double.tryParse(_fleteCtrl.text) ?? 0.0;
+
+      // Ajustamos los valores actuales restando los valores originales
+      _totalNuevo = _totalActual + otrosCargosNew - otrosCargos + fleteNew - flete;
+
+      _restanteNuevo = _restanteActual - ajuste;
     });
-    _ajusteCtrl.addListener(_recalcularNuevos);
+  }
+
+  Future<void> _seleccionarFecha(BuildContext context) async {
+    final fecha = await showDatePicker(
+      context: context,
+      initialDate: _fechaEntrega ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
+    if (fecha != null) setState(() => _fechaEntrega = fecha);
+  }
+
+  Future<void> _seleccionarHora(BuildContext context) async {
+    final hora = await showTimePicker(
+      context: context,
+      initialTime: _horaEntrega ?? TimeOfDay.now(),
+    );
+    if (hora != null) setState(() => _horaEntrega = hora);
   }
 
   @override
   void dispose() {
-    _nombreCtrl.dispose();
     _telefonoCtrl.dispose();
     _domicilioCtrl.dispose();
-    _depositoCtrl.dispose();
+    _otrosCargosCtrl.dispose();
     _fleteCtrl.dispose();
-    _anticipoCtrl.dispose();
     _ajusteCtrl.dispose();
     super.dispose();
-  }
-
-  void _recalcularActuales() {
-    final dep = double.tryParse(_depositoCtrl.text) ?? 0;
-    final fle = double.tryParse(_fleteCtrl.text) ?? 0;
-    final ant = double.tryParse(_anticipoCtrl.text) ?? 0;
-    setState(() {
-      _totalActual = dep + fle;
-      _restanteActual = (_totalActual - ant).clamp(0, double.infinity);
-    });
-  }
-
-  void _recalcularNuevos() {
-    final ajuste = double.tryParse(_ajusteCtrl.text) ?? 0;
-    final ant = double.tryParse(_anticipoCtrl.text) ?? 0;
-    setState(() {
-      _totalNuevo = (_totalActual + ajuste).clamp(0, double.infinity);
-      _restanteNuevo = (_totalNuevo - ant).clamp(0, double.infinity);
-    });
   }
 
   @override
@@ -237,14 +257,7 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                     _SectionCard(
                       title: 'Cliente',
                       children: [
-                        TextFormField(
-                          controller: _nombreCtrl,
-                          enabled: false, // ← bloqueado
-                          decoration: const InputDecoration(
-                            labelText: 'Nombre (no editable)',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                        ),
+                        _ReadOnlyTile(icon: Icons.person_outline, label: 'Cliente', value: _cliente),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _telefonoCtrl,
@@ -253,6 +266,8 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                             labelText: 'Teléfono',
                             prefixIcon: Icon(Icons.call_outlined),
                           ),
+                          validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                         ),
                       ],
                     ),
@@ -269,9 +284,17 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                                 decoration: InputDecoration(
                                   labelText: _fechaEntrega != null
                                       ? 'Fecha: ${_fechaEntrega!.day}/${_fechaEntrega!.month}/${_fechaEntrega!.year}'
-                                      : 'Fecha no registrada',
+                                      : 'Seleccionar Fecha *',
                                   prefixIcon: const Icon(Icons.event_outlined),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Elegir fecha',
+                                    onPressed: () => _seleccionarFecha(context),
+                                    icon: const Icon(Icons.edit_calendar_outlined),
+                                  ),
                                 ),
+                                validator: (_) =>
+                                    _fechaEntrega == null ? 'Requerido' : null,
+                                onTap: () => _seleccionarFecha(context),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -281,22 +304,39 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                                 decoration: InputDecoration(
                                   labelText: _horaEntrega != null
                                       ? 'Hora: ${_horaEntrega!.format(context)}'
-                                      : 'Hora no registrada',
+                                      : 'Seleccionar Hora *',
                                   prefixIcon: const Icon(Icons.schedule_outlined),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Elegir hora',
+                                    onPressed: () => _seleccionarHora(context),
+                                    icon: const Icon(Icons.access_time),
+                                  ),
                                 ),
+                                validator: (_) =>
+                                    _horaEntrega == null ? 'Requerido' : null,
+                                onTap: () => _seleccionarHora(context),
                               ),
                             ),
                           ],
                         ),
+                        if(_items['tipo_entrega'].toString() == 'domicilio')
+                        ...[
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _domicilioCtrl,
-                          readOnly: true,
                           decoration: const InputDecoration(
-                            labelText: 'Domicilio (solo lectura)',
+                            labelText: 'Domicilio',
                             prefixIcon: Icon(Icons.location_on_outlined),
                           ),
+                          validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                         ),
+                        ],
+                        if(_items['tipo_entrega'].toString() != 'domicilio')
+                        ...[
+                        const SizedBox(height: 12),
+                        _ReadOnlyTile(icon: Icons.location_on_outlined, label: 'Entrega en', value: 'ESTÁ SUCURSAL'),
+                        ]
                       ],
                     ),
 
@@ -305,17 +345,10 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                       title: 'Producto',
                       children: [
                         _ReadOnlyTile(icon: Icons.cake_outlined, label: 'Producto', value: _producto),
+                        if(_tipo_pan.isNotEmpty)
+                          _ReadOnlyTile(icon: Icons.straighten_outlined, label: 'Tipo de Pan', value: _tipo_pan),
                         _ReadOnlyTile(icon: Icons.straighten_outlined, label: 'Tamaño', value: _tamano),
-                        Row(
-                          children: [
-                            Expanded(child: _ReadOnlyTile(icon: Icons.layers_outlined, label: 'Pisos', value: '$_pisos')),
-                            const SizedBox(width: 12),
-                            Expanded(child: _ReadOnlyTile(icon: Icons.toggle_on_outlined, label: 'Tipo', value: _doble ? 'Doble' : 'Sencillo')),
-                          ],
-                        ),
-                        if (_base != null && _base!.isNotEmpty) _ReadOnlyTile(
-                          icon: Icons.inventory_2_outlined, label: 'Base', value: _base!,
-                        ),
+                        
                       ],
                     ),
 
@@ -323,28 +356,40 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                     _SectionCard(
                       title: 'Diseño del pastel',
                       children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: _disenos.map((k) => Chip(label: Text(k))).toList(),
-                        ),
-                        _ReadOnlyTile(icon: Icons.icecream_outlined, label: 'Sabor', value: _sabor),
+                        if(_items['detalle_pedido']?[0]?['producto_variantes']?['productos']?['categorias']?['nombre']?.toString() == 'Pasteles')
+                        ...[
+                          Row(
+                            children: [
+                              Expanded(child: _ReadOnlyTile(icon: Icons.layers_outlined, label: 'Pisos', value: _pisos)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _ReadOnlyTile(icon: Icons.toggle_on_outlined, label: 'Tipo', value: _doble)),
+                            ],
+                          ),
+                          _ReadOnlyTile(icon: Icons.cake_outlined, label: 'Diseño', value: _diseno),
+                        ],
                         if (_mensaje.isNotEmpty)
                           _ReadOnlyTile(icon: Icons.edit_note_outlined, label: 'Mensaje', value: _mensaje),
+                        _ReadOnlyTile(icon: Icons.list, label: 'Notas', value: _notas),
                       ],
+                      
                     ),
 
                     // ========== Precio (igual que en el formulario) ==========
                     _SectionCard(
                       title: 'Precio del pastel (actual)',
                       children: [
+                        _ReadOnlyTile(icon: Icons.money, label: 'Subtotal', value: _subtotal.toString()),
+                        const SizedBox(height: 12),
                         TextFormField(
-                          controller: _depositoCtrl,
+                          controller: _otrosCargosCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Depósito',
+                            labelText: 'Otros cargos',
                             prefixIcon: Icon(Icons.attach_money_outlined),
                           ),
+                          validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          onChanged: (v) => _calcularNuevosTotales(),
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -354,16 +399,12 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                             labelText: 'Flete',
                             prefixIcon: Icon(Icons.local_shipping_outlined),
                           ),
+                          validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          onChanged: (v) => _calcularNuevosTotales(),
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _anticipoCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Anticipo',
-                            prefixIcon: Icon(Icons.savings_outlined),
-                          ),
-                        ),
+                        _ReadOnlyTile(icon: Icons.savings_outlined, label: 'Anticipo', value: _anticipo.toString()),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -373,8 +414,8 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                           ],
                         ),
                         Text(
-                          'El restante se calcula como Total - Anticipo.',
-                          style: TextStyle(color: Colors.grey.shade600),
+                          'Los ajustes se reflejaran en la sección siguiente.',
+                          style: TextStyle(color: const Color.fromARGB(255, 231, 137, 137)),
                         ),
                       ],
                     ),
@@ -387,9 +428,12 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
                           controller: _ajusteCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Ajuste (+/-) al Total',
+                            labelText: 'Ajuste al Restante (Se resta al restante)',
                             prefixIcon: Icon(Icons.price_change_outlined),
                           ),
+                          validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          onChanged: (v) => _calcularNuevosTotales(),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -445,7 +489,7 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
     );
   }
 
-  void _onActualizar() {
+  void _onActualizar() async {
     if (!(_formKey.currentState?.validate() ?? true)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Revisa los campos')),
@@ -453,19 +497,58 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
       return;
     }
 
-    // Aquí normalmente mandarías a PB/SQLite:
-    // - Actualizar teléfono si cambió
-    // - Guardar depósito/flete/anticipo y nuevo total/restante
-    // - Guardar estado
-    // (y, si quieres, guardar un historial de “ajustes”)
+    try{
+      String est;
+      switch (_estado) {
+        case PedidoEstado.pendiente:
+          est = 'pendiente';
+          break;
+        case PedidoEstado.hecho:
+          est = 'hecho';
+          break;
+        case PedidoEstado.entregado:
+          est = 'entregado';
+          break;
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$_folio actualizado · Estado: ${_estadoLabel(_estado)} · Total: ${_totalNuevo.toStringAsFixed(2)} · Restante: ${_restanteNuevo.toStringAsFixed(2)}',
+      // Armamos las fechas de forma segura para pasarlas a la función
+      final String? fechaDb = _fechaEntrega != null 
+          ? _fechaEntrega!.toIso8601String().split('T')[0] 
+          : null;
+    
+      final String? horaDb = _horaEntrega != null 
+          ? "${_horaEntrega!.hour.toString().padLeft(2, '0')}:${_horaEntrega!.minute.toString().padLeft(2, '0')}:00" 
+          : null;
+
+      // Disparamos la transacción atómica
+      await supabase.rpc('actualizar_pedido_completo', params: {
+        'p_id_cliente': _items['clientes']['id_cliente'],
+        'p_telefono': _telefonoCtrl.text.trim(),
+        'p_direccion': _domicilioCtrl.text.trim(),
+        'p_id_pedido': _items['id_pedido'],
+        'p_fecha_entrega': fechaDb,
+        'p_hora_entrega': horaDb,
+        'p_descuento': double.parse(_otrosCargosCtrl.text.trim()) ,
+        'p_flete': double.parse(_fleteCtrl.text.trim()),
+        'p_restante': _restanteNuevo,
+        'p_estado': est,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$_folio actualizado · Estado: ${_estadoLabel(_estado)} · Total: ${_totalNuevo.toStringAsFixed(2)} · Restante: ${_restanteNuevo.toStringAsFixed(2)}',
+          ),
         ),
-      ),
-    );
+      );
+    }catch (err) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar: $err'), 
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _estadoLabel(PedidoEstado e) {

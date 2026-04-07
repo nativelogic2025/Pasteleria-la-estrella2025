@@ -879,18 +879,15 @@ class _PedidoScreenState extends State<PedidoScreen> {
                               'telefono': _telefonoController.text.trim(),
                               'nombre_producto': _productos.firstWhere((p) => p['id_producto'].toString() == _productoSelId)['nombre'],
                               'tamaño': _variantes.firstWhere((v) => v['id_variante'].toString() == _varianteSelId)['tamaño'],
-                              'flete': double.tryParse(_fleteController.text.trim()) ?? 0.0,
                               'armado': _armadoSeleccionado,
-                              'piso': _pisoSeleccionado,
-                              'diseno': _disenoSeleccionado,
+                              'pisos': _pisoSeleccionado,
+                              'diseño': _disenoSeleccionado,
                               'categoria': _categoriaProductoSel,
                               'direccion': _domicilioController.text.trim(),
                             };
 
                             final nuevoPedido = {
                               // tabla pedidos
-                              //'id_pedido': '', //db
-                              //'folio': '', // db 
                               'id_direccion': null, // mal formulado
                               //'fecha_pedido': '', // current datetime
                               // 1. Extraemos solo la parte de la fecha (YYYY-MM-DD)
@@ -910,14 +907,13 @@ class _PedidoScreenState extends State<PedidoScreen> {
                               'total': _total,
                               'anticipo': double.tryParse(_anticipoController.text.trim()) ?? 0.0,
                               'restante': _restante,
+                              'flete': double.tryParse(_fleteController.text.trim()) ?? 0.0,
                               'observaciones': 'Domicilio: ${_domicilioController.text.trim()} - Cliente: ${_nombreController.text.trim()} - Teléfono: ${_telefonoController.text.trim()}',
                               'id_usuario': null, // depende de quien crea el pedido
                             };
 
                             final nuevoPedidoDetalles = {
                                 // tabla detalle_pedidos
-                                //'id_detalle': '', //db
-                                //'id_pedido': respuesta['id_pedido'], //db anterior
                                 'id_variante': _varianteSelId ?? '',
                                 'cantidad': '1',
                                 'precio_unitario': _subtotal, // el subtotal refleja el precio del producto seleccionado sin cargos adicionales, por lo que es un buen candidato para ser el precio unitario en el detalle

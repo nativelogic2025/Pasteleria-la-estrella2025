@@ -273,6 +273,7 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
                                     ...eventos.map((e) => _TimelineTile(
                                           event: e,
                                           onEditar: () => _abrirEditar(context, e),
+                                          onRecargar: _cargar,
                                         )),
                                   ],
                                 );
@@ -474,14 +475,12 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
             }
 
             // 2. Primer UPDATE: Pedido
-            // 👈 AGREGA .select() ANTES DE .single()
             final resp = await supabase.from('pedidos').update({
               'estado': est,
               'restante': nuevo.restante.toString(), // Asegúrate de que tu BD acepta texto aquí, o quita el .toString() si es numérico (double)
             }).eq('folio', e.folio).select().single(); 
 
             // 3. Segundo UPDATE: Cliente
-            // 👈 NO NECESITAS .single() AQUÍ porque no guardas la respuesta
             await supabase.from('clientes').update({
               'nombre': nuevo.cliente,
               'telefono': nuevo.telefono,
@@ -511,10 +510,10 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
             );
           }
         },
-        onAbrirConsulta: () {
+        onAbrirConsulta: () async {
           Navigator.pop(context);
           // ⬇️ ahora abre la pantalla de consulta:
-          Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => 
               VerPedidoConsultaScreen(
@@ -522,6 +521,8 @@ class _VerPedidosScreenState extends State<VerPedidosScreen> {
               )
             ),
           );
+
+          _cargar();
         },
       ),
     );
@@ -598,12 +599,14 @@ class _FiltroDropdown<T> extends StatelessWidget {
 }
 
 class _TimelineTile extends StatelessWidget {
+  final VoidCallback onRecargar;
   final PedidoEvent event;
   final VoidCallback onEditar;
 
   const _TimelineTile({
     required this.event,
     required this.onEditar,
+    required this.onRecargar,
   });
 
   (IconData icon, Color color, String texto) _estadoVisual(PedidoEstado e) {
@@ -646,9 +649,9 @@ class _TimelineTile extends StatelessWidget {
                 // Folio “clickable”
                 InkWell(
                   borderRadius: BorderRadius.circular(4),
-                  onTap: () {
+                  onTap: () async {
                     // Abrir pantalla de consulta para este pedido
-                    Navigator.push(
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => 
                         VerPedidoConsultaScreen(
@@ -656,6 +659,8 @@ class _TimelineTile extends StatelessWidget {
                         )
                       ),
                     );
+
+                    onRecargar();
                   },
                   child: Text(
                     'Folio: ${event.folio}',
@@ -989,7 +994,8 @@ class _EditarPedidoSheetState extends State<EditarPedidoSheet> {
                       controller: _folioCtrl,
                       readOnly: true,
                       decoration: const InputDecoration(
-                        labelText: 'Folio',
+                        fillColor: Color.fromARGB(0, 145, 145, 211),
+                        labelText: 'Folio (No editable)',
                         filled: true,
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.tag),
@@ -1020,8 +1026,10 @@ class _EditarPedidoSheetState extends State<EditarPedidoSheet> {
 
               TextFormField(
                 controller: _clienteCtrl,
+                readOnly: true,
                 decoration: const InputDecoration(
-                  labelText: 'Cliente',
+                  fillColor: Color.fromARGB(0, 145, 145, 211),
+                  labelText: 'Cliente (No editable)',
                   filled: true,
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person_outline),
