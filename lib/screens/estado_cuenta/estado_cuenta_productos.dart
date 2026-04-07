@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
-
-// ✅ Widgets compartidos ("wingeds")
 import 'estado_widgets.dart';
+import '../servicios/supabase_client.dart';
+
 
 /// ======== MODELOS ========
 class VentaProducto {
@@ -33,6 +33,8 @@ class EstadoCuentaProductosScreen extends StatefulWidget {
 
 class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScreen> {
   bool _intlReady = false;
+  List<VentaProducto> _ventas = [];
+  bool _loading = true;
 
   // Filtro de periodo
   String _periodo = 'Día'; // Día | Mes | Año
@@ -44,42 +46,81 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
   late final DateFormat _fmtHora12;     // hh:mm a (12h)
   late final DateFormat _fmtFechaCorta; // dd/MM/yyyy
 
-  // Datos dummy (conecta a tu backend cuando quieras)
-  final List<VentaProducto> _ventas = [
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(minutes: 30)),
-      producto: 'pastel de chocolate',
-      cantidad: 1,
-      precioUnit: 280,
-      costoUnit: 160,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(hours: 2)),
-      producto: 'pay de queso',
-      cantidad: 2,
-      precioUnit: 150,
-      costoUnit: 90,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
-      producto: 'galletas surtidas',
-      cantidad: 5,
-      precioUnit: 25,
-      costoUnit: 10,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(days: 2, hours: 3)),
-      producto: 'pastel tres leches',
-      cantidad: 1,
-      precioUnit: 320,
-      costoUnit: 190,
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
+    _cargar();
     _initIntl();
+  }
+
+  // ---------- Data (Supabase) ----------
+  // 1. Cargar productos de la categoría
+  Future<void> _cargar() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    try {
+      // VENTAS PROPUCTOS PUROS
+      var query = supabase.from('ventas_detalle').select('''
+        *, ventas(*), productos(*), producto_variantes(*)
+      ''');
+      final respuestaSupabase = await query.order('id_venta', ascending: false);
+
+      if (!mounted) return;  
+
+      // 4. MAPEO DE DATOS: Convertimos los Mapas crudos a objetos
+      List<VentaProducto> listaMapeada = (respuestaSupabase as List<dynamic>).map((fila) {       
+
+        final DateTime fechaHoraCompleta = DateTime.tryParse(fila['fecha_pedido'].toString()) ?? DateTime.now();
+
+        // D) Construimos y retornamos el objeto final
+        return VentaProducto(
+          fecha: fechaHoraCompleta,
+          producto: '${fila['productos']['nombre'].toString()} - ${fila['producto_variantes']['tamaño'].toString()}',
+          cantidad: (int.tryParse(fila['cantidad'].toString()) ?? 0),
+          precioUnit: (double.tryParse(fila['precio_unitario'].toString()) ?? 0),
+          costoUnit: (double.tryParse(fila['producto_variantes']['costo_produccion'].toString()) ?? 0), // REVISAR BASE DE DATOS
+        );
+        
+      }).toList();
+
+      // VENTAS POR PEDIDO
+      var query2 = supabase.from('detalle_pedido').select('''
+        *, pedidos(*), producto_variantes(*, productos(*))
+      ''');
+      final respuestaSupabase2 = await query2.order('id_detalle', ascending: false);
+
+      if (!mounted) return; 
+      listaMapeada += (respuestaSupabase2 as List<dynamic>).map((fila) {       
+
+        final DateTime fechaHoraCompleta = DateTime.tryParse('${fila['pedidos']['fecha_entrega'].toString()} ${fila['pedidos']['hora_entrega'].toString()}') ?? DateTime.now();
+
+        // D) Construimos y retornamos el objeto final
+        return VentaProducto(
+          fecha: fechaHoraCompleta,
+          producto: '${fila['producto_variantes']['productos']['nombre'].toString()} - ${fila['producto_variantes']['tamaño'].toString()}',
+          cantidad: (int.tryParse(fila['cantidad'].toString()) ?? 0),
+          precioUnit: (double.tryParse(fila['precio_unitario'].toString()) ?? 0),
+          costoUnit: (double.tryParse(fila['producto_variantes']['costo_produccion'].toString()) ?? 0), // REVISAR BASE DE DATOS
+        );
+        
+      }).toList();
+
+      setState(() {
+        _ventas = listaMapeada; // 👈 Ahora _todos recibe puros PedidoEvent reales
+        _loading = false;
+      });
+
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _ventas = []; 
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar pedidos: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _initIntl() async {
@@ -188,7 +229,9 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
-          child: ListView(
+          child: _loading 
+              ? const Center(child: CircularProgressIndicator(color: Colors.black))
+              : ListView(
             padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
             children: [
               // KPIs
