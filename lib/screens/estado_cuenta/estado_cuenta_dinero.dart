@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import '../servicios/supabase_client.dart';
+
 
 // ✅ Widgets compartidos ("wingeds")
 import 'estado_widgets.dart';
@@ -33,6 +35,8 @@ class EstadoCuentaDineroScreen extends StatefulWidget {
 
 class _EstadoCuentaDineroScreenState extends State<EstadoCuentaDineroScreen> {
   bool _intlReady = false;
+  List<MovimientoDinero> _movimientos = [];
+  bool _loading = true;
 
   // Filtro de periodo
   String _periodo = 'Día'; // Día | Mes | Año
@@ -44,44 +48,125 @@ class _EstadoCuentaDineroScreenState extends State<EstadoCuentaDineroScreen> {
   late final DateFormat _fmtHora;
   late final DateFormat _fmtFechaCorta;
 
-  // Datos dummy (conecta a tu backend cuando quieras)
-  final List<MovimientoDinero> _movimientos = [
-    MovimientoDinero(
-      fecha: DateTime.now().subtract(const Duration(hours: 2)),
-      tipo: TipoMovimiento.ingreso,
-      monto: 1200,
-      concepto: 'Venta POS #1001',
-    ),
-    MovimientoDinero(
-      fecha: DateTime.now().subtract(const Duration(hours: 3)),
-      tipo: TipoMovimiento.gasto,
-      monto: 300,
-      concepto: 'Compra de insumos',
-    ),
-    MovimientoDinero(
-      fecha: DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-      tipo: TipoMovimiento.ingreso,
-      monto: 950,
-      concepto: 'Venta online #889',
-    ),
-    MovimientoDinero(
-      fecha: DateTime.now().subtract(const Duration(days: 3)),
-      tipo: TipoMovimiento.gasto,
-      monto: 180,
-      concepto: 'Servicio de paquetería',
-    ),
-    MovimientoDinero(
-      fecha: DateTime.now().subtract(const Duration(days: 20)),
-      tipo: TipoMovimiento.ingreso,
-      monto: 6400,
-      concepto: 'Venta mayoreo',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
+    _cargar();
     _initIntl();
+  }
+
+  // ---------- Data (Supabase) ----------
+  // 1. Cargar productos de la categoría
+  Future<void> _cargar() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    try {
+      // INGRESOS DE PEDIDOS
+      var query = supabase.from('pedidos').select('''
+        fecha_pedido,
+        folio,
+        total,
+        restante
+      ''');
+      final respuestaSupabase = await query.order('fecha_pedido', ascending: false);
+      final filtro1 = respuestaSupabase.where((pedido) {
+        double diferencia = (double.tryParse(pedido['total'].toString()) ?? 0) - (double.tryParse(pedido['restante'].toString()) ?? 0);
+        
+        return diferencia > 0; 
+      }).toList();
+
+      if (!mounted) return;  
+
+      // 4. MAPEO DE DATOS: Convertimos los Mapas crudos a objetos
+      List<MovimientoDinero> listaMapeada = (filtro1 as List<dynamic>).map((fila) {       
+        // C) Mapeo del Enum de estado:
+        /*TipoMovimiento typeEnum;
+        switch ('ingreso') {
+          case 'ingreso':
+            typeEnum = TipoMovimiento.ingreso;
+            break;
+          default:
+            typeEnum = TipoMovimiento.gasto;
+        }*/
+
+        double diferencia = (double.tryParse(fila['total'].toString()) ?? 0) - (double.tryParse(fila['restante'].toString()) ?? 0);
+        final DateTime fechaHoraCompleta = DateTime.tryParse(fila['fecha_pedido'].toString()) ?? DateTime.now();
+
+        // D) Construimos y retornamos el objeto final
+        return MovimientoDinero(
+          fecha: fechaHoraCompleta,
+          tipo: TipoMovimiento.ingreso,
+          monto: diferencia,
+          concepto: 'Pedido ${fila['folio'].toString()}',
+        );
+        
+      }).toList();
+
+      // INGRESOS DE VENTAS
+      var query2 = supabase.from('pagos_venta').select('''
+        fecha,
+        monto,
+        ventas( folio )
+      ''');
+      final respuestaSupabase2 = await query2.order('fecha', ascending: false);
+
+      if (!mounted) return; 
+
+      listaMapeada += (respuestaSupabase2 as List<dynamic>).map((fila) {
+
+        final DateTime fechaHoraCompleta = DateTime.tryParse(fila['fecha'].toString()) ?? DateTime.now();
+
+        // D) Construimos y retornamos el objeto final
+        return MovimientoDinero(
+          fecha: fechaHoraCompleta,
+          tipo: TipoMovimiento.ingreso,
+          monto: (double.tryParse(fila['monto'].toString()) ?? 0),
+          concepto: 'Venta ${fila['ventas']['folio'].toString()}',
+        );
+        
+      }).toList();
+
+      // GASTOS
+      var query3 = supabase.from('gastos').select('''
+        fecha,
+        monto,
+        concepto
+      ''');
+      final respuestaSupabase3 = await query3.order('fecha', ascending: false);
+
+      if (!mounted) return; 
+
+      listaMapeada += (respuestaSupabase3 as List<dynamic>).map((fila) {
+
+        final DateTime fechaHoraCompleta = DateTime.tryParse(fila['fecha'].toString()) ?? DateTime.now();
+
+        // D) Construimos y retornamos el objeto final
+        return MovimientoDinero(
+          fecha: fechaHoraCompleta,
+          tipo: TipoMovimiento.gasto,
+          monto: (double.tryParse(fila['monto'].toString()) ?? 0),
+          concepto: 'Pago ${fila['concepto'].toString()}',
+        );
+        
+      }).toList();
+
+
+      setState(() {
+        _movimientos = listaMapeada; // 👈 Ahora _todos recibe puros PedidoEvent reales
+        _loading = false;
+      });
+
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _movimientos = []; 
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar pedidos: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _initIntl() async {
@@ -180,7 +265,9 @@ class _EstadoCuentaDineroScreenState extends State<EstadoCuentaDineroScreen> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
-          child: ListView(
+          child: _loading 
+              ? const Center(child: CircularProgressIndicator(color: Colors.black))
+              : ListView(
             padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
             children: [
               // KPIs
