@@ -1,50 +1,55 @@
 import 'package:flutter/material.dart';
-import 'ventas/ventas_screen.dart';
-import 'pedido/pedido_screen.dart';
-import 'catalogo/catalogo_screen.dart';
-import 'ver_pedidos/ver_pedidos_screen.dart';
-import 'login/login_screen.dart'; // 👈 Importar login
 
-class MenuColaborador extends StatelessWidget {
-  const MenuColaborador({super.key});
+// Importa aquí tus pantallas externas
+import 'ventas_pasteles.dart';
+import 'ventas.dart';
+import '../carrito/carrito.dart'; // 👈 Importamos la nueva pantalla
+
+class VentasScreen extends StatelessWidget {
+  const VentasScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final List<String> botones = [
-      'Ventas',
-      'Pedido',
-      'Stock',
-      'Catalogo',
-      'Ver Pedidos',
+    final List<String> categorias = [
+      'Pasteles',
+      'Postres',
+      'Velas',
+      'Repostería',
+      'Extras',
     ];
 
     final List<IconData> iconos = [
-      Icons.sell,
-      Icons.shopping_cart_checkout,
-      Icons.add_shopping_cart,
-      Icons.book,
-      Icons.assignment_turned_in,
+      Icons.cake,
+      Icons.icecream,
+      Icons.local_fire_department,
+      Icons.cookie,
+      Icons.shopping_bag,
     ];
 
     final List<Widget> pantallas = [
-      const VentasScreen(),
-      const PedidoScreen(),
-      const CatalogoScreen(),
-      const VerPedidosScreen(),
+      const VentasPasteles(),
+      const Ventas(categoria: 'Postres'),
+      const Ventas(categoria: 'Velas'),
+      const Ventas(categoria: 'Repostería'),
+      const Ventas(categoria: 'Extras'),
     ];
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Menú Colaborador'),
+        title: const Text('Ventas'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context), // Regresa a la página anterior
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.shopping_cart),
             onPressed: () {
-              Navigator.pushAndRemoveUntil(
+              Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
+                MaterialPageRoute(builder: (context) => const CarritoScreen())
+
               );
             },
           ),
@@ -54,10 +59,8 @@ class MenuColaborador extends StatelessWidget {
         builder: (context, constraints) {
           double spacing = 20;
           int filas = 3;
-          double buttonSize =
-              (constraints.maxHeight - (spacing * (filas + 1))) / filas;
-          double maxWidthButton =
-              (constraints.maxWidth - spacing * 2 - 40) / 3;
+          double buttonSize = (constraints.maxHeight - (spacing * (filas + 1))) / filas;
+          double maxWidthButton = (constraints.maxWidth - spacing * 2 - 40) / 3;
           if (buttonSize > maxWidthButton) buttonSize = maxWidthButton;
 
           return Center(
@@ -65,7 +68,7 @@ class MenuColaborador extends StatelessWidget {
               spacing: spacing,
               runSpacing: spacing + 20,
               alignment: WrapAlignment.center,
-              children: List.generate(botones.length, (index) {
+              children: List.generate(categorias.length, (index) {
                 return SizedBox(
                   width: buttonSize,
                   child: Column(
@@ -77,8 +80,7 @@ class MenuColaborador extends StatelessWidget {
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                  builder: (context) => pantallas[index]),
+                              MaterialPageRoute(builder: (context) => pantallas[index]),
                             );
                           },
                           style: OutlinedButton.styleFrom(
@@ -97,7 +99,7 @@ class MenuColaborador extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        botones[index],
+                        categorias[index],
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 14,
@@ -116,3 +118,4 @@ class MenuColaborador extends StatelessWidget {
     );
   }
 }
+

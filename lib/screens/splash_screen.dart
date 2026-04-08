@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math' as math; // 👈 para pi
-import 'package:pos_pasteleria_la_estrella/screens/login_screen.dart';
+import 'package:pos_pasteleria_la_estrella/screens/login/login_screen.dart';
 import 'package:confetti/confetti.dart';
 
 class SplashScreen extends StatefulWidget {

@@ -40,7 +40,8 @@ dependencies:
   crypto: ^3.0.6
   pdf: ^3.11.3        # 👈 aquí, versión válida
   printing: ^5.14.2   # opcional
-  pocketbase: ^0.23.0+1
+  #pocketbase: ^0.23.0+1
+  supabase_flutter: ^2.0.0 # Revisa la última versión en pub.dev
   http: ^1.1.0
   # ✨ Paquete para visualizar PDFs
   syncfusion_flutter_pdfviewer: ^31.1.19
@@ -49,6 +50,7 @@ dependencies:
   # ✨ Paquete para abrir URLs
   url_launcher: ^6.2.6 
   confetti: ^0.7.0
+  image_picker: ^1.0.7
 
 
 dev_dependencies:
@@ -71,6 +73,7 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/logo_ticket.png
     - assets/pasteles/
     - assets/postres/
     - assets/reposteria/
