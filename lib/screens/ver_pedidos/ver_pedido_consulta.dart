@@ -243,7 +243,9 @@ class _VerPedidoConsultaScreenState extends State<VerPedidoConsultaScreen> {
               ),
               child: Form(
                 key: _formKey,
-                child: ListView(
+                child:_loading 
+                  ? const Center(child: CircularProgressIndicator(color: Colors.black))
+                  :  ListView(
                   children: [
                     _HeaderCard(
                       title: 'Consulta de Pedido',
