@@ -84,7 +84,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
   // Traer la url completa del archivo
   String? _iconUrl(Map<String, dynamic> r) {
     final file = r['imagen_url']; 
-    if (file == null || file.toString().isEmpty) return null;
+    if (file == null || file.toString().trim().isEmpty) return null;
 
     return supabase.storage
         .from('recetas') 
@@ -93,7 +93,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
 
   String? _portadaUrl(Map<String, dynamic> r) {
     final file = r['portada_url']; 
-    if (file == null || file.toString().isEmpty) return null;
+    if (file == null || file.toString().trim().isEmpty) return null;
 
     return supabase.storage
         .from('recetas') 
@@ -171,7 +171,9 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             ),
           ),
           Expanded(
-            child: AnimatedSwitcher(
+            child:_cargandoDatos
+            ? const Center(child: CircularProgressIndicator(color: Colors.black))
+            : AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               child: enAlbum ? _buildAlbumView(context) : _buildFolderView(context),
             ),
@@ -250,7 +252,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
             final album = items[i];
             final String nombre = album['nombre'] ?? 'Sin nombre';
             final String idAlbum = album['id_album'].toString();
-            final String portada = supabase.storage.from('recetas').getPublicUrl(album['portada_url'].toString());
+            final String portada = _portadaUrl(album) ?? '';
             // ✅ VERIFICACIÓN SEGURA:
             int conteo = 0;
             final relacionFotos = album['fotos_album'];
@@ -362,6 +364,8 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
         _fotos.sort((a, b) => (a['titulo'] ?? '').toLowerCase().compareTo((b['titulo'] ?? '').toLowerCase()));
       });
       _mostrarSnack('Imagen Subida Correctamente');
+
+      _inicializarAlbums();
     }
   }
 
@@ -532,6 +536,7 @@ class _CatalogoFotoScreenState extends State<CatalogoFotoScreen> {
       // 3. ACTUALIZAR INTERFAZ
       final album = _albums.firstWhere((a) => a['nombre'] == _albumActual);
       _cargarAlbum(album['id_album'].toString()); // Volvemos a cargar las fotos del álbum para reflejar el cambio
+      _inicializarAlbums();
  
       return true;
 

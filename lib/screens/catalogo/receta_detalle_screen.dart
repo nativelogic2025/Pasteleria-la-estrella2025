@@ -116,18 +116,10 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
   Future<List<Map<String, dynamic>>> _cargarIngredientes() async {
     try {
       // 1. Realizamos la consulta con JOINS anidados
-      // id_matPrim (...) trae los datos de la materia prima
-      // id_matPrim ( id_unidMed (...) ) trae la unidad de medida dentro de la materia prima
       final List<Map<String, dynamic>> records = await supabase
           .from('receta_ingrediente_variante')
           .select('''
-            *,
-            id_receta(
-              *
-            ),
-            id_ingrediente(
-              *
-            )
+            *, recetas(*), ingredientes(*)
           ''')
           .eq('id_receta', widget.receta['id_receta']); // Acceso a mapa con ['id']
 
@@ -147,13 +139,7 @@ class _RecetaDetalleScreenState extends State<RecetaDetalleScreen> {
       final List<Map<String, dynamic>> records = await supabase
           .from('ingredientes')
           .select('''
-            *,
-            id_tipo (
-              *
-            ),
-            id_categoria(
-              *
-            )
+            *, categorias(*), tipo_inventario(*)
           ''')
           .order('nombre', ascending: true);
 
