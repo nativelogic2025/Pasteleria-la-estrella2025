@@ -1,10 +1,11 @@
-// estado_cuenta_productos.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ Widgets compartidos ("wingeds")
+import '../../utils/timezone_utils.dart';
 import 'estado_widgets.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 /// ======== MODELOS ========
 class VentaProducto {
@@ -33,6 +34,8 @@ class EstadoCuentaProductosScreen extends StatefulWidget {
 
 class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScreen> {
   bool _intlReady = false;
+  bool _loading = true;
+  final _supabase = Supabase.instance.client;
 
   // Filtro de periodo
   String _periodo = 'Día'; // Día | Mes | Año
@@ -44,42 +47,12 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
   late final DateFormat _fmtHora12;     // hh:mm a (12h)
   late final DateFormat _fmtFechaCorta; // dd/MM/yyyy
 
-  // Datos dummy (conecta a tu backend cuando quieras)
-  final List<VentaProducto> _ventas = [
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(minutes: 30)),
-      producto: 'pastel de chocolate',
-      cantidad: 1,
-      precioUnit: 280,
-      costoUnit: 160,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(hours: 2)),
-      producto: 'pay de queso',
-      cantidad: 2,
-      precioUnit: 150,
-      costoUnit: 90,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
-      producto: 'galletas surtidas',
-      cantidad: 5,
-      precioUnit: 25,
-      costoUnit: 10,
-    ),
-    VentaProducto(
-      fecha: DateTime.now().subtract(const Duration(days: 2, hours: 3)),
-      producto: 'pastel tres leches',
-      cantidad: 1,
-      precioUnit: 320,
-      costoUnit: 190,
-    ),
-  ];
+  List<VentaProducto> _ventas = [];
 
   @override
   void initState() {
     super.initState();
-    _initIntl();
+    _initIntl().then((_) => _cargarVentasDetalle());
   }
 
   Future<void> _initIntl() async {
@@ -90,6 +63,80 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
     _fmtHora12 = DateFormat('hh:mm a', 'es_MX');      // 12h con am/pm
     _fmtFechaCorta = DateFormat('dd/MM/yyyy', 'es_MX');
     if (mounted) setState(() => _intlReady = true);
+  }
+
+  Future<void> _cargarVentasDetalle() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    try {
+      final unificado = <VentaProducto>[];
+
+      // Extraer renglones vendidos en mostrador
+      final vDetalle = await _supabase.from('ventas_detalle').select('id_venta, id_producto, cantidad, precio_unitario');
+      
+      final idVentas = vDetalle.map((v) => v['id_venta'] as int?).where((e) => e != null).toSet().toList();
+      final idProds = vDetalle.map((v) => v['id_producto'] as int?).where((e) => e != null).toSet().toList();
+
+      final vVentasDate = <int, DateTime>{};
+      if (idVentas.isNotEmpty) {
+        final resVentas = await _supabase.from('ventas').select('id_venta, fecha').inFilter('id_venta', idVentas);
+        for (var row in resVentas) {
+          final idV = row['id_venta'] as int?;
+          final fStr = row['fecha'];
+          if (idV != null && fStr != null) {
+            vVentasDate[idV] = parseSupabaseTs(fStr.toString());
+          }
+        }
+      }
+
+      final vProdsInfo = <int, String>{};
+      if (idProds.isNotEmpty) {
+        final resProds = await _supabase.from('productos').select('id_producto, nombre').inFilter('id_producto', idProds);
+        for (var row in resProds) {
+          final idP = row['id_producto'] as int?;
+          if (idP != null) {
+            vProdsInfo[idP] = row['nombre'].toString();
+          }
+        }
+      }
+
+      for (var det in vDetalle) {
+          final idV = det['id_venta'] as int?;
+          final idP = det['id_producto'] as int?;
+          if (idV == null || idP == null) continue;
+
+          final fecha = vVentasDate[idV];
+          final nombreProd = vProdsInfo[idP];
+          if (fecha == null || nombreProd == null) continue;
+
+          final precioUnitario = double.tryParse(det['precio_unitario'].toString()) ?? 0.0;
+
+          unificado.add(VentaProducto(
+               fecha: fecha,
+               producto: nombreProd,
+               cantidad: int.tryParse(det['cantidad'].toString()) ?? 1,
+               precioUnit: precioUnitario,
+               costoUnit: precioUnitario * 0.55, // Costo aproximado (55%) al no tener columna específica
+          ));
+      }
+
+      // Order recien a antiguo
+      unificado.sort((a, b) => b.fecha.compareTo(a.fecha));
+
+      if (mounted) {
+        setState(() {
+            _ventas = unificado;
+            _loading = false;
+        });
+      }
+
+    } catch (e) {
+      if (mounted) {
+         setState(() => _loading = false);
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
   }
 
   // ======== LÓGICA DE PERIODO ========
@@ -127,7 +174,7 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
       map.update(v.producto, (old) => old + v.cantidad, ifAbsent: () => v.cantidad);
     }
     final list = map.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    return list.take(5).toList();
+    return list;
   }
 
   // ======== UI ========
@@ -153,10 +200,14 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Productos'),
+        title: const Text('Productos y Desempeño', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: Colors.black,
-        elevation: 1,
+        elevation: 0,
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _cargarVentasDetalle)
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: PeriodoHeader(
@@ -184,131 +235,137 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
           ),
         ),
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-            children: [
-              // KPIs
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  KpiCard(
-                    title: 'Ventas brutas',
-                    value: _fmtMon.format(_ventasBrutas),
-                    icon: Icons.point_of_sale,
-                  ),
-                  KpiCard(
-                    title: 'Costo mercancía',
-                    value: _fmtMon.format(_costoMercancia),
-                    icon: Icons.inventory_2,
-                  ),
-                  KpiCard(
-                    title: 'Utilidad',
-                    value: _fmtMon.format(_utilidadProductos),
-                    icon: Icons.attach_money,
-                  ),
-                  KpiCard(
-                    title: 'Margen',
-                    value: '${(_margenProductos * 100).toStringAsFixed(1)} %',
-                    icon: Icons.pie_chart_outline,
-                  ),
-                  KpiCard(
-                    title: 'Unidades vendidas',
-                    value: _unidadesVendidas.toString(),
-                    icon: Icons.shopping_cart_checkout,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+                  children: [
+                    // KPIs
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        KpiCard(
+                          title: 'Ventas Brutas',
+                          value: _fmtMon.format(_ventasBrutas),
+                          icon: Icons.point_of_sale,
+                        ),
+                        KpiCard(
+                          title: 'Costo de Mercancía',
+                          value: _fmtMon.format(_costoMercancia),
+                          icon: Icons.inventory_2,
+                          iconColor: Colors.deepPurple,
+                        ),
+                        KpiCard(
+                          title: 'Utilidad Operativa',
+                          value: _fmtMon.format(_utilidadProductos),
+                          icon: Icons.attach_money,
+                        ),
+                        KpiCard(
+                          title: 'Margen Promedio',
+                          value: '${(_margenProductos * 100).toStringAsFixed(1)} %',
+                          icon: Icons.pie_chart_outline,
+                        ),
+                        KpiCard(
+                          title: 'Volumen',
+                          value: '$_unidadesVendidas pzas',
+                          icon: Icons.shopping_cart_checkout,
+                        ),
+                      ].animate(interval: 50.ms).fade(duration: 400.ms).scaleXY(begin: 0.9),
+                    ),
+                    const SizedBox(height: 16),
 
-              // Top productos
-              SectionCard(
-                title: 'Top productos del periodo',
-                child: _topProductos.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.star_border,
-                        title: 'Sin ventas',
-                        subtitle: 'No hay ventas registradas en este periodo.',
-                      )
-                    : Column(
-                        children: _topProductos.map((e) {
-                          final nombre = e.key;
-                          final cant = e.value;
-                          final max = (_topProductos.first.value).toDouble().clamp(1, 9999);
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6.0),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                    // Top productos
+                    SectionCard(
+                      title: 'Rendimiento y Más Vendidos',
+                      child: _topProductos.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.star_border,
+                              title: 'Sin volumen de venta',
+                              subtitle: 'No hay productos de mostrador ni catálogo desplazados en este periodo.',
+                            )
+                          : Column(
+                              children: _topProductos.take(15).map((e) {
+                                final nombre = e.key;
+                                final cant = e.value;
+                                final max = (_topProductos.first.value).toDouble().clamp(1, 9999);
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                  child: Row(
                                     children: [
-                                      Text(nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                      const SizedBox(height: 6),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: LinearProgressIndicator(
-                                          value: cant / max,
-                                          minHeight: 8,
-                                          backgroundColor: const Color(0xFFF0F0F0),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(nombre.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                            const SizedBox(height: 6),
+                                            ClipRRect(
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: LinearProgressIndicator(
+                                                value: cant / max,
+                                                minHeight: 8,
+                                                backgroundColor: const Color(0xFFF0F0F0),
+                                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
+                                      const SizedBox(width: 16),
+                                      Text('x$cant', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.blueGrey)),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text('x$cant', style: const TextStyle(fontWeight: FontWeight.w700)),
-                              ],
+                                ).animate(key: ValueKey(nombre))
+                                 .fade(duration: 300.ms, delay: (20 * _topProductos.take(15).toList().indexOf(e)).ms)
+                                 .slideX(begin: 0.05, duration: 300.ms, delay: (20 * _topProductos.take(15).toList().indexOf(e)).ms);
+                              }).toList(),
                             ),
-                          );
-                        }).toList(),
-                      ),
-              ),
-              const SizedBox(height: 12),
+                    ),
+                    const SizedBox(height: 12),
 
-              // Ventas del periodo (formato frase SIEMPRE "en efectivo")
-              SectionCard(
-                title: 'Ventas del periodo',
-                child: ventasPeriodo.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.receipt_long,
-                        title: 'Sin ventas',
-                        subtitle: 'No hay ventas registradas en este periodo.',
-                      )
-                    : Column(
-                        children: ventasPeriodo.map((v) {
-                          final total = v.cantidad * v.precioUnit;
-                          final hora = _fmtHora12.format(v.fecha).toLowerCase(); // ej. 12:30 p. m.
-                          final frase =
-                              '${v.cantidad} ${v.producto} a las $hora en efectivo';
-                          return ListTile(
-                            leading: CircleAvatar(
-                              radius: 18,
-                              backgroundColor: const Color(0xFFF3F3F3),
-                              child: const Icon(Icons.payments_outlined, color: Colors.black87),
+                    // Historial
+                    SectionCard(
+                      title: 'Historial de Productos Ruteados',
+                      child: ventasPeriodo.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.receipt_long,
+                              title: 'Sin movimiento',
+                              subtitle: 'No se procesó cobro de ningún producto.',
+                            )
+                          : Column(
+                              children: ventasPeriodo.map((v) {
+                                final total = v.cantidad * v.precioUnit;
+                                final hora = _fmtHora12.format(v.fecha).toLowerCase();
+                                final frase = '${v.cantidad} ${v.producto} · $hora';
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: const Color(0xFFE8F5E9),
+                                    child: const Icon(Icons.inventory_2_rounded, color: Colors.green, size: 18),
+                                  ),
+                                  title: Text(
+                                    frase,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(_fmtFechaCorta.format(v.fecha)),
+                                  trailing: Text(
+                                    _fmtMon.format(total),
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ).animate(key: ValueKey(v.fecha.millisecondsSinceEpoch.toString() + v.producto))
+                                 .fade(duration: 300.ms, delay: (20 * ventasPeriodo.indexOf(v)).ms)
+                                 .slideX(begin: 0.05, duration: 300.ms, delay: (20 * ventasPeriodo.indexOf(v)).ms);
+                              }).toList(),
                             ),
-                            title: Text(
-                              // Capitaliza primera letra
-                              frase[0].toUpperCase() + frase.substring(1),
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            subtitle: Text(_fmtFechaCorta.format(v.fecha)),
-                            trailing: Text(
-                              _fmtMon.format(total),
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

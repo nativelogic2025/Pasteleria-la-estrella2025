@@ -8,6 +8,7 @@ import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
 import '../servicios/supabase_client.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class VentasPasteles extends StatefulWidget {
   const VentasPasteles({super.key});
@@ -81,6 +82,7 @@ class _VentasPastelesState extends State<VentasPasteles> {
           .from('categorias')
           .select('id_categoria')
           .eq('nombre', 'Pasteles')
+          .limit(1)
           .single();
 
       final categoriaPastelesId = categoriaData['id_categoria'];
@@ -125,24 +127,39 @@ class _VentasPastelesState extends State<VentasPasteles> {
     try {
       final List<Map<String, dynamic>> res = await supabase
           .from('producto_variantes')
-          .select('stock, tamaño, precio_venta')
+          .select('id_variante, id_producto, stock, tamaño, precio_venta')
           .eq('id_producto', idProducto)
           .order('tamaño', ascending: true);
 
       if (!mounted) return res;
 
-      // IMPORTANTE: Actualizamos el loading y retornamos el resultado
+      // Unificar duplicados por tamaño (sumando su stock)
+      final Map<String, Map<String, dynamic>> unicos = {};
+      for (var v in res) {
+        final tamano = v['tamaño']?.toString().trim() ?? 'N/A';
+        if (unicos.containsKey(tamano)) {
+          final stockActual = (unicos[tamano]!['stock'] as num?)?.toInt() ?? 0;
+          final stockNuevo = (v['stock'] as num?)?.toInt() ?? 0;
+          unicos[tamano]!['stock'] = stockActual + stockNuevo;
+        } else {
+          unicos[tamano] = Map<String, dynamic>.from(v);
+        }
+      }
+
+      final variantesFinales = unicos.values.toList();
+      variantesFinales.sort((a, b) => (a['tamaño'] ?? '').toString().compareTo((b['tamaño'] ?? '').toString()));
+
       setState(() => _cargandoVariantes = false);
-      return res; 
+      return variantesFinales; 
 
     } catch (e) {
       if (mounted) {
-        setState(() => _cargandoVariantes = false); // Apagamos el loading aunque falle
+        setState(() => _cargandoVariantes = false); 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar Pasteles: $e')),
         );
       }
-      return []; // Retornamos lista vacía en caso de error
+      return []; 
     }
   }
 
@@ -150,81 +167,81 @@ class _VentasPastelesState extends State<VentasPasteles> {
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('Pasteles'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _cargar),
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CarritoScreen()),
-              );
-            },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Pasteles',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _cargar,
+                tooltip: 'Recargar',
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(
-              builder: (context, constraints) {
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : LayoutBuilder(
+                  builder: (context, constraints) {
 
-                final chocolate = _items.where((r) {
-                  //final n = _nombre(r).trim();
-                  final n = _sabor(r).trim();
-                  return n.toLowerCase().startsWith('choco');
-                }).toList();
+                    final chocolate = _items.where((r) {
+                      final n = _nombre(r).trim().toLowerCase();
+                      final s = _sabor(r).trim().toLowerCase();
+                      return n.contains('choco') || s.contains('choco');
+                    }).toList();
 
-                final vainilla = _items.where((r) {
-                  //final n = _nombre(r).trim();
-                  final n = _sabor(r).trim();
-                  return !n.toLowerCase().startsWith('choco');
-                }).toList();
+                    final vainilla = _items.where((r) {
+                      final n = _nombre(r).trim().toLowerCase();
+                      final s = _sabor(r).trim().toLowerCase();
+                      return !(n.contains('choco') || s.contains('choco'));
+                    }).toList();
 
-                if (_items.isEmpty) {
-                  return const Center(
-                    child: Text('No hay pasteles disponibles', style: TextStyle(fontSize: 16)),
-                  );
-                }
+                    if (_items.isEmpty) {
+                      return const Center(
+                        child: Text('No hay pasteles disponibles', style: TextStyle(fontSize: 16)),
+                      );
+                    }
 
-                final double spacing = 16;
-                final double buttonSize = (constraints.maxWidth / 2) - (spacing * 1.5);
+                    final double spacing = 16;
+                    final double buttonSize = (constraints.maxWidth / 2) - (spacing * 1.5);
 
-
-                return SingleChildScrollView(
-                  padding: EdgeInsets.all(spacing),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _buildColumnaSabores(
-                          titulo: 'Vainilla',
-                          color: const Color.fromARGB(255, 237, 233, 175), 
-                          productos: vainilla,
-                          buttonSize: buttonSize,
-                        ),
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(spacing),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _buildColumnaSabores(
+                              titulo: 'Vainilla',
+                              color: const Color.fromARGB(255, 255, 250, 230), 
+                              productos: vainilla,
+                              buttonSize: buttonSize,
+                            ),
+                          ),
+                          SizedBox(width: spacing),
+                          Expanded(
+                            child: _buildColumnaSabores(
+                              titulo: 'Chocolate',
+                              color: const Color.fromARGB(255, 240, 230, 230),
+                              productos: chocolate,
+                              buttonSize: buttonSize,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(width: spacing),
-                      Expanded(
-                        child: _buildColumnaSabores(
-                          titulo: 'Chocolate',
-                          color: const Color.fromARGB(255, 192, 130, 130),
-                          productos: chocolate,
-                          buttonSize: buttonSize,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -268,7 +285,9 @@ class _VentasPastelesState extends State<VentasPasteles> {
           crossAxisSpacing: 10,
           mainAxisSpacing: 10, // Igualamos al horizontal para simetría
           childAspectRatio: proporcion, // 👈 1.0 GARANTIZA UN CUADRADO PERFECTO
-          children: productos.map((r) {
+          children: productos.asMap().entries.map((entry) {
+            final int index = entry.key;
+            final Map<String, dynamic> r = entry.value;
             final nombre = _nombre(r);
             final stock = _stock(r);
             final url = _iconUrl(r);
@@ -321,7 +340,10 @@ class _VentasPastelesState extends State<VentasPasteles> {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ],
-            );
+            ).animate()
+             .fade(duration: 400.ms, delay: (50 * index).ms)
+             .slideY(begin: 0.1, duration: 400.ms, delay: (50 * index).ms)
+             .scaleXY(begin: 0.95, end: 1.0, duration: 400.ms, delay: (50 * index).ms);
           }).toList(),
         ),
     ],
@@ -433,15 +455,20 @@ class _VentasPastelesState extends State<VentasPasteles> {
   }
 
   // ---------- Agregar al carrito ----------
-  void _agregarAlCarrito(BuildContext context, Map<String, dynamic> r, String nombre, String imgUrl, double precio) {
+  void _agregarAlCarrito(BuildContext context, Map<String, dynamic> variante, String nombre, String imgUrl, double precio) {
     final assetFallback = 'assets/pasteles/${_slug(nombre)}.png';
-    print(imgUrl);
+    
+    // Obtenemos seguros los IDs por si vienen como int o double o String
+    int? idProd = int.tryParse(variante['id_producto']?.toString() ?? '');
+    int? idVar = int.tryParse(variante['id_variante']?.toString() ?? '');
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
         nombre: nombre,
         imagen: (imgUrl != null && imgUrl.isNotEmpty) ? imgUrl : assetFallback,
         precio: precio,
+        idProducto: idProd,
+        idVariante: idVar,
       ),
     );
 

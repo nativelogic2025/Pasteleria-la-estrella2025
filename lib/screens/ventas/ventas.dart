@@ -8,6 +8,7 @@ import '../carrito/carrito.dart';
 import 'producto.dart' as producto;
 
 import '../servicios/supabase_client.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class Ventas extends StatefulWidget {
   // 1. Declaras el parámetro
@@ -85,6 +86,7 @@ class _VentasState extends State<Ventas> {
           .from('categorias')
           .select('id_categoria')
           .eq('nombre', widget.categoria)
+          .limit(1)
           .single();
 
       final categoriaExtrasId = categoriaData['id_categoria'];
@@ -134,15 +136,30 @@ class _VentasState extends State<Ventas> {
     try {
       final List<Map<String, dynamic>> res = await supabase
           .from('producto_variantes')
-          .select('stock, tamaño, precio_venta')
+          .select('id_variante, id_producto, stock, tamaño, precio_venta')
           .eq('id_producto', idProducto)
           .order('tamaño', ascending: true);
 
       if (!mounted) return res;
 
-      // IMPORTANTE: Actualizamos el loading y retornamos el resultado
+      // Unificar duplicados por tamaño (sumando su stock)
+      final Map<String, Map<String, dynamic>> unicos = {};
+      for (var v in res) {
+        final tamano = v['tamaño']?.toString().trim() ?? 'N/A';
+        if (unicos.containsKey(tamano)) {
+          final stockActual = (unicos[tamano]!['stock'] as num?)?.toInt() ?? 0;
+          final stockNuevo = (v['stock'] as num?)?.toInt() ?? 0;
+          unicos[tamano]!['stock'] = stockActual + stockNuevo;
+        } else {
+          unicos[tamano] = Map<String, dynamic>.from(v);
+        }
+      }
+
+      final variantesFinales = unicos.values.toList();
+      variantesFinales.sort((a, b) => (a['tamaño'] ?? '').toString().compareTo((b['tamaño'] ?? '').toString()));
+
       setState(() => _cargandoVariantes = false);
-      return res; 
+      return variantesFinales;
 
     } catch (e) {
       if (mounted) {
@@ -155,127 +172,135 @@ class _VentasState extends State<Ventas> {
     }
   }
 
-  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(widget.categoria),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _cargar),
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CarritoScreen()),
-              );
-            },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                widget.categoria,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _cargar,
+                tooltip: 'Recargar',
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final visibles = _items.where((r) => _stock(r) >= 0).toList();
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final visibles = _items.where((r) => _stock(r) >= 0).toList();
 
-                if (visibles.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No hay productos disponibles en ${widget.categoria}',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  );
-                }
-
-                final double spacing = 20;
-                final int columnas = constraints.maxWidth > 600 ? 5 : 2;
-                final double buttonSize =
-                    (constraints.maxWidth - (spacing * (columnas + 1))) /
-                        columnas;
-
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: spacing,
-                    runSpacing: spacing,
-                    alignment: WrapAlignment.center,
-                    children: visibles.map((r) {
-                      final nombre = _nombre(r);
-                      final stock = _stock(r);
-                      final url = _iconUrl(r);
-                      final assetFallback =
-                          'assets/${widget.categoria.toLowerCase()}/${_slug(nombre)}.png';
-
-                      return SizedBox(
-                        width: buttonSize,
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: buttonSize,
-                              height: buttonSize,
-                              child: OutlinedButton(
-                                onPressed: stock != 0 ? () => _onTapProducto(context, r) : 
-                                  () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Producto agotado')),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: stock != 0 ? const Color.fromARGB(
-                                      255, 245, 225, 184) : Colors.grey,
-                                  side: const BorderSide(
-                                      color: Colors.black, width: 2),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: (url != null && url.isNotEmpty)
-                                      ? Image.network(
-                                          url,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) =>
-                                              const Icon(
-                                                Icons.image_not_supported,
-                                                size: 50,
-                                              ),
-                                        )
-                                      : Image.asset(
-                                          assetFallback,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) =>
-                                              const Icon(
-                                                Icons.image_not_supported,
-                                                size: 50,
-                                              ),
-                                        ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              nombre,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 2),
-                          ],
+                    if (visibles.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No hay productos disponibles en ${widget.categoria}',
+                          style: const TextStyle(fontSize: 16),
                         ),
                       );
-                    }).toList(),
-                  ),
-                );
-              },
-            ),
+                    }
+
+                    final double spacing = 16;
+                    final int columnas = constraints.maxWidth > 600 ? 4 : 2;
+                    final double buttonSize =
+                        (constraints.maxWidth - (spacing * (columnas + 1))) /
+                            columnas;
+
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        alignment: WrapAlignment.start,
+                        children: visibles.asMap().entries.map((entry) {
+                          final int index = entry.key;
+                          final Map<String, dynamic> r = entry.value;
+                          final nombre = _nombre(r);
+                          final stock = _stock(r);
+                          final url = _iconUrl(r);
+                          final assetFallback =
+                              'assets/${widget.categoria.toLowerCase()}/${_slug(nombre)}.png';
+
+                          return SizedBox(
+                            width: buttonSize,
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  width: buttonSize,
+                                  height: buttonSize,
+                                  child: OutlinedButton(
+                                    onPressed: stock != 0 ? () => _onTapProducto(context, r) : 
+                                      () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Producto agotado')),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      backgroundColor: stock != 0 ? Colors.white : Colors.grey[200],
+                                      side: BorderSide(
+                                          color: Colors.grey.shade300, width: 1),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      elevation: stock != 0 ? 2 : 0,
+                                      shadowColor: Colors.black12,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: (url != null && url.isNotEmpty)
+                                          ? Image.network(
+                                              url,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (_, __, ___) =>
+                                                  const Icon(
+                                                    Icons.image_not_supported,
+                                                    size: 50,
+                                                    color: Colors.grey,
+                                                  ),
+                                            )
+                                          : Image.asset(
+                                              assetFallback,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (_, __, ___) =>
+                                                  const Icon(
+                                                    Icons.image_not_supported,
+                                                    size: 50,
+                                                    color: Colors.grey,
+                                                  ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  nombre,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 14, fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 4),
+                              ],
+                            ),
+                          ).animate()
+                           .fade(duration: 400.ms, delay: (50 * index).ms)
+                           .slideY(begin: 0.1, duration: 400.ms, delay: (50 * index).ms)
+                           .scaleXY(begin: 0.95, end: 1.0, duration: 400.ms, delay: (50 * index).ms);
+                        }).toList(),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -385,15 +410,22 @@ class _VentasState extends State<Ventas> {
 
   // ---------- Agregar al carrito ----------
   void _agregarAlCarrito(
-      BuildContext context, Map<String, dynamic> r, String nombreMostrar, String imgUrl, double precio) {
-    final nombreBase = _nombre(r);
-    final assetFallback = 'assets/${widget.categoria.toLowerCase()}/${_slug(nombreBase)}.png';
+      BuildContext context, Map<String, dynamic> variante, String nombreMostrar, String imgUrl, double precio) {
+    // Aquí 'variante' es el elemento que seleccionamos desde el subgrupo
+    // Si queremos el slug original, se lo tendríamos que pasar, pero usaremos el nombre mostrar procesado
+    final assetFallback = 'assets/${widget.categoria.toLowerCase()}/${_slug(nombreMostrar.split(' - ')[0])}.png';
+
+    // Extraemos los IDs
+    int? idProd = int.tryParse(variante['id_producto']?.toString() ?? '');
+    int? idVar = int.tryParse(variante['id_variante']?.toString() ?? '');
 
     Provider.of<CarritoProvider>(context, listen: false).agregarProducto(
       producto.Producto(
         nombre: nombreMostrar,
         imagen: (imgUrl != null && imgUrl.isNotEmpty) ? imgUrl : assetFallback,
         precio: precio,
+        idProducto: idProd,
+        idVariante: idVar,
       ),
     );
 

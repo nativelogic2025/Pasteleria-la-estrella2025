@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DialogoAgregarVariante extends StatefulWidget {
   final String nombreProducto;
@@ -18,6 +19,7 @@ class DialogoAgregarVariante extends StatefulWidget {
 class _DialogoAgregarVarianteState extends State<DialogoAgregarVariante> {
   // 1. LLAVE PARA VALIDAR EL FORMULARIO
   final _formKey = GlobalKey<FormState>();
+  final _supabase = Supabase.instance.client;
 
   // 2. CONTROLADORES PARA CAPTURAR EL TEXTO
   final _tamanoCtrl = TextEditingController();
@@ -28,8 +30,12 @@ class _DialogoAgregarVarianteState extends State<DialogoAgregarVariante> {
   final _pesoCtrl = TextEditingController();
   final _minCtrl = TextEditingController();
   final _maxCtrl = TextEditingController();
+  final _multiplicadorCtrl = TextEditingController(text: '1.0'); // Base multiplier
 
   @override
+  void initState() {
+    super.initState();
+  }
   void dispose() {
     // Limpieza de memoria
     _tamanoCtrl.dispose();
@@ -40,6 +46,7 @@ class _DialogoAgregarVarianteState extends State<DialogoAgregarVariante> {
     _pesoCtrl.dispose();
     _minCtrl.dispose();
     _maxCtrl.dispose();
+    _multiplicadorCtrl.dispose();
     super.dispose();
   }
 
@@ -83,6 +90,7 @@ class _DialogoAgregarVarianteState extends State<DialogoAgregarVariante> {
                 _buildField(label: 'Peso Estimado (opcional)', controller: _pesoCtrl, isNumeric: true),
                 _buildField(label: 'Stock mínimo (opcional)', controller: _minCtrl, isNumeric: true, onlyInt: true),
                 _buildField(label: 'Stock máximo (opcional)', controller: _maxCtrl, isNumeric: true, onlyInt: true),
+                _buildField(label: 'Multiplicador Receta', controller: _multiplicadorCtrl, isNumeric: true, isRequired: true),
               ],
             ),
           ),
@@ -106,6 +114,7 @@ class _DialogoAgregarVarianteState extends State<DialogoAgregarVariante> {
                 'peso_estimado': double.tryParse(_pesoCtrl.text),
                 'stock_minimo': int.tryParse(_minCtrl.text),
                 'stock_maximo': int.tryParse(_maxCtrl.text),
+                'multiplicador_receta': double.tryParse(_multiplicadorCtrl.text) ?? 1.0,
               };
               Navigator.pop(context, datos); // ✅ RETORNA EL MAPA
             }

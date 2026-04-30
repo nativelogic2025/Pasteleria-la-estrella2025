@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_animate/flutter_animate.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -205,7 +206,7 @@ class _DialogoEditarProductoState extends State<DialogoEditarProducto> {
                 _buildField(label: 'Sabor (opcional)', controller: _saborCtrl, isRequired: false),
                 _buildField(label: 'Unidad de Medida (opcional)', controller: _unidadCtrl, isRequired: false),
      
-              ],
+              ].animate(interval: 50.ms).fade(duration: 400.ms).slideY(begin: 0.05),
             ),
           ),
         ),

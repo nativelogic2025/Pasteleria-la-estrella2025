@@ -13,34 +13,50 @@ class AuthService {
     // Nota: Supabase refresca la sesión automáticamente, no necesitas un "authRefresh" manual.
   }
 
-  /// Obtener el rol desde la tabla 'perfiles'
-  Future<String?> getCurrentRoleName() async {
+  /// Obtener el rol y nombre desde la base de datos
+  Future<Map<String, String?>?> getCurrentUserData() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return null;
 
     try {
-      // 🧠 EXPLICACIÓN:
-      // .select('..., roles(nombre)') le dice a Supabase:
-      // "Tráeme el perfil, pero también entra a la tabla 'roles' 
-      // vinculada y dame solo el campo 'nombre'".
+      // 1. Verificar si el usuario está activo y obtener su nombre
+      final userRecord = await _supabase
+          .from('usuarios')
+          .select('activo, nombre_completo')
+          .eq('id', user.id)
+          .maybeSingle();
+          
+      if (userRecord != null && userRecord['activo'] == false) {
+        await logout();
+        throw Exception('Cuenta desactivada');
+      }
+
+      // 2. Obtener el rol
       final data = await _supabase
           .from('usuarios_rol')
           .select('''
-            id_rol,
             roles (
               nombre
             )
           ''')
           .eq('id_usuario', user.id)
-          .single();
+          .maybeSingle();
 
-      // El resultado viene como un Map anidado:
-      // data = { "rol_id": 1, "roles": { "nombre": "admin" } }
+      String? roleName;
+      if (data != null) {
+        final roleData = data['roles'] as Map<String, dynamic>?;
+        roleName = roleData?['nombre'] as String?;
+      }
       
-      final roleData = data['roles'] as Map<String, dynamic>?;
-      return roleData?['nombre'] as String?;
+      return {
+        'rol': roleName,
+        'nombre': userRecord?['nombre_completo'] as String?,
+      };
     } catch (e) {
-      print('Error obteniendo rol: $e');
+      print('Error obteniendo datos del usuario: $e');
+      if (e.toString().contains('Cuenta desactivada')) {
+        rethrow;
+      }
       return null;
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../servicios/supabase_client.dart';
 import './dialogo_produccion.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -95,23 +96,17 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     // 2. Si hay resultados y la lista no está vacía
     if (resultados != null && resultados.isNotEmpty) {
       try {
-        // 3. Limpiamos los datos visuales antes de mandarlos a la BD
-        // Solo enviamos las columnas que realmente existen en tu tabla de Supabase
-        final datosParaInsertar = resultados.map((r) {
-          return {
-            "id_producto": r['id_producto'],
-            "id_variante": r['id_variante'], // El UUID o int de la variante
-            "cantidad_original": r['cantidad'],
-            "cantidad_restante": r['cantidad'],
-            "fecha_produccion": r['fecha_produccion'],
-            "fecha_caducidad": r['fecha_caducidad'],
-          };
-        }).toList();
-
-        print(datosParaInsertar);
-
-        // 4. Insertamos toda la lista a la vez. 
-        await supabase.from('produccion').insert(datosParaInsertar);
+        // 3. Iteramos y llamamos al RPC para cada registro de producción para descontar BOM
+        for (var r in resultados) {
+          await supabase.rpc('registrar_produccion_bom', params: {
+            'p_id_producto': r['id_producto'],
+            'p_id_variante': r['id_variante'],
+            'p_cantidad': r['cantidad'],
+            'p_observaciones': r['observaciones'] ?? '',
+            'p_fecha_produccion': r['fecha_produccion'],
+            'p_fecha_caducidad': r['fecha_caducidad'],
+          });
+        }
 
         _recargarSegunTab();
 
@@ -405,6 +400,8 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     _cargarItems(categoriaId: categoriaId);
   }
 
+  String? _selectedProductId;
+
   @override
   Widget build(BuildContext context) {
     if (!_categoriasCargadas || _tabController == null) {
@@ -412,258 +409,471 @@ class _StockScreenState extends State<StockScreen> with TickerProviderStateMixin
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        // Eliminamos el espaciado automático para que el buscador use bien el ancho
-        titleSpacing: 10, 
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: Colors.grey.shade200, height: 1),
+        ),
+        titleSpacing: 20,
         title: Row(
           children: [
-            // 1. SOLUCIÓN: Usar Expanded para que el TextField no cause error de ancho
+            const Icon(Icons.inventory_2_outlined, color: Color(0xFF8C5535)),
+            const SizedBox(width: 12),
+            const Text('Producción', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+            const SizedBox(width: 30),
+            
+            // Search Bar
             Expanded(
+              flex: 2,
               child: SizedBox(
-                height: 40, // Opcional: Controla la altura para que se vea más estilizado
+                height: 42,
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Buscar por producto ...',
-                    prefixIcon: const Icon(Icons.search, size: 20),
+                    hintText: 'Buscar por producto...',
+                    hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                    prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
                     filled: true,
-                    fillColor: Colors.grey[200], // Un color diferente ayuda a resaltar sobre el blanco
+                    fillColor: Colors.grey.shade100,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
+                      borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide.none,
                     ),
-                    suffixIcon: _searchController.text.isNotEmpty // Usar .text.isNotEmpty
+                    suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, size: 20),
+                            icon: const Icon(Icons.clear, size: 18),
                             onPressed: () {
                               _searchController.clear();
-                              // No olvides llamar a setState si quieres que desaparezca el icono X
-                              setState(() {}); 
+                              setState(() => _searchQuery = '');
+                              _filterAndGroupItems();
                             },
                           )
                         : null,
                   ),
-                  onChanged: (value) {
-                    // Actualiza el estado para mostrar/ocultar el icono de "clear"
-                    setState(() {});
-                  },
                 ),
               ),
             ),
-            const SizedBox(width: 15),
+            const Spacer(),
+            
+            // TabBar (Categories)
             SizedBox(
-              child: ElevatedButton(
-                onPressed: () => _agregarProduccionASupabase(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      const Color.fromARGB(210, 236, 231, 131),
-                ),
-                child: 
-                  const Text(
-                    "Registrar producción",
-                    style: TextStyle(fontSize: 18),
-                  ),
+              width: 500,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                indicatorColor: const Color(0xFF8C5535),
+                labelColor: const Color(0xFF8C5535),
+                unselectedLabelColor: Colors.grey,
+                dividerColor: Colors.transparent,
+                tabs: [
+                  const Tab(text: 'Todos'),
+                  ..._categorias.map((c) => Tab(text: c['nombre'].toString())),
+                ],
+              ),
+            ),
+            const SizedBox(width: 20),
+            
+            ElevatedButton.icon(
+              onPressed: () => _agregarProduccionASupabase(),
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text("Registrar Producción", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF8C5535),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(50.0),
-          child: Row(
-            children: [
-              // El TabBar envuelto en Expanded para que tome todo el espacio izquierdo
-              Expanded(
-                child: TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabs: [
-                    const Tab(text: 'Todos'),
-                    ..._categorias.map((c) => Tab(text: c['nombre'].toString())),
-                  ],
-                ),
-              ),
-              // Separador visual
-              Container(height: 30, width: 1, color: Colors.grey[300]),
-              const SizedBox(width: 8),
-              
-              // Los nuevos filtros incrustados a la derecha
-              _buildFiltrosDerecha(),
-            ],
-          ),
-        ),
       ),
-      body: _cargandoItems
-          ? const Center(child: CircularProgressIndicator())
-          : _buildProductosAgrupadosList(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _recargarSegunTab,
-        tooltip: 'Recargar',
-        child: const Icon(Icons.refresh),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // PANEL IZQUIERDO (Lista de Productos y Filtros)
+          Container(
+            width: 360,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(right: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Column(
+              children: [
+                _buildFiltrosDecorados(),
+                const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                Expanded(
+                  child: _cargandoItems
+                      ? const Center(child: CircularProgressIndicator(color: Color(0xFF8C5535)))
+                      : _buildListaProductos(),
+                ),
+              ],
+            ),
+          ),
+          
+          // PANEL DERECHO (Detalle y Tabla)
+          Expanded(
+            child: Container(
+              color: const Color(0xFFFAFAFA),
+              child: _selectedProductId == null || !_productosAgrupados.containsKey(_selectedProductId)
+                  ? _buildEmptyState()
+                  : _buildDetalleProducto(_selectedProductId!),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildProductosAgrupadosList() {
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inventory_2_rounded, size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text('Selecciona un producto', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+          const SizedBox(height: 8),
+          Text('Para ver su historial de producción y variantes', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltrosDecorados() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: const Color(0xFFFCF5EE),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Filtros', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF8C5535))),
+              Row(
+                children: [
+                  const Text('Solo con Stock', style: TextStyle(fontSize: 13, color: Colors.black87)),
+                  const SizedBox(width: 8),
+                  Switch(
+                    value: _soloConStock,
+                    activeColor: const Color(0xFF8C5535),
+                    onChanged: (val) {
+                      setState(() {
+                        _soloConStock = val;
+                        _filterAndGroupItems();
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _dateChip('Desde', _fechaInicio, () => _seleccionarFecha(true)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _dateChip('Hasta', _fechaFin, () => _seleccionarFecha(false)),
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _dateChip(String label, DateTime date, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFE5CEB3)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.calendar_today, size: 14, color: Color(0xFF8C5535)),
+            const SizedBox(width: 6),
+            Text(_formatDate(date), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListaProductos() {
     if (_productosAgrupados.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
-          child: Text(_searchQuery.isNotEmpty ? 'No se encontraron resultados para "$_searchQuery".' : 'No hay productos en esta categoría.'),
+          child: Text(_searchQuery.isNotEmpty ? 'No se encontraron resultados.' : 'No hay productos.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600)),
         ),
       );
     }
-    final productoIds = _productosAgrupados.keys.toList();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(12.0),
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: productoIds.length,
-        itemBuilder: (context, index) {
-          final productoId = productoIds[index];
-          final variantes = _productosAgrupados[productoId]!;
-          final primerVariante = variantes.first;
+    final keys = _productosAgrupados.keys.toList();
 
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 8.0),
-            // ✨ --- CAMBIOS PARA EXPANSIÓN AUTOMÁTICA --- ✨
-            child: ExpansionTile(
-              // Key única para forzar la reconstrucción al buscar/limpiar
-              key: ValueKey('$productoId-$_searchQuery'),
-              // Se expande si hay una búsqueda activa
-              initiallyExpanded: _searchQuery.isNotEmpty,
-              leading: _ProductoIcono(url: _iconUrl(primerVariante)),
-              title: Text(_nombre(primerVariante), style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(_categoria(primerVariante)),
-              children: <Widget>[
-                LayoutBuilder(
-                  builder: (context, constraints) => SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                      child: _buildTablaVariantes(variantes),
-                    ),
-                  ),
-                ),
-              ],
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: keys.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final id = keys[index];
+        final p = _productosAgrupados[id]!.first;
+        final selected = _selectedProductId == id;
+
+        int totalStock = 0;
+        final variantes = p['producto_variantes'] as List<dynamic>? ?? [];
+        for (var v in variantes) {
+           final producciones = v['produccion'] as List<dynamic>? ?? [];
+           for (var prod in producciones) {
+              totalStock += (prod['cantidad_restante'] as num?)?.toInt() ?? 0;
+           }
+        }
+
+        return InkWell(
+          onTap: () => setState(() => _selectedProductId = id),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFFFCF5EE) : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: selected ? const Color(0xFF8C5535) : Colors.grey.shade200),
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  DataTable _buildTablaVariantes(List<Map<String, dynamic>> productos) {
-    return DataTable(
-      columns: const [
-        // DataColumn(label: Text('Producto')),
-        DataColumn(label: Text('Variante')),
-        DataColumn(label: Text('Cantidad Producida')),
-        DataColumn(label: Text('Cantidad Disponible')),
-        DataColumn(label: Text('Fecha Producción')),
-        DataColumn(label: Text('Fecha Caducidad')),
-        DataColumn(label: Text('Observaciones')),
-      ],
-      rows: productos.expand((producto) {
-        final listaVariantes = producto['producto_variantes'] as List<dynamic>? ?? [];
-
-        // Primer expand: recorre las variantes
-        return listaVariantes.expand((variante) {
-          final listaProduccion = variante['produccion'] as List<dynamic>? ?? [];
-
-          // Si no hay producciones, ¿quieres mostrar la variante vacía? 
-          // Si la respuesta es NO, solo retorna el map de abajo.
-          // Si la respuesta es SÍ, podrías manejar un caso por defecto.
-
-          // Segundo expand: recorre cada registro de producción dentro de la variante
-          return listaProduccion.map((produccion) {
-            return DataRow(
-              cells: [
-                // Datos de la Variante (se repetirán si hay varias producciones)
-                DataCell(Text(variante['tamaño'] ?? 'Variante')), 
-                
-                // Datos específicos del registro de PRODUCCIÓN
-                DataCell(
-                  Text(
-                    '${produccion['cantidad_original'] ?? 0} pzas', 
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+            child: Row(
+              children: [
+                _ProductoIcono(url: _iconUrl(p)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_nombre(p), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: selected ? const Color(0xFF8C5535) : Colors.black87)),
+                      const SizedBox(height: 4),
+                      Text(_categoria(p), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    ],
                   ),
                 ),
-
-                DataCell(
-                  Text(
-                    '${produccion['cantidad_restante'] ?? 0} pzas', 
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: totalStock > 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                
-                // Fechas tomadas del registro de producción, no de la variante
-                DataCell(Text(produccion['fecha_produccion'] ?? 'N/A')),
-                DataCell(Text(produccion['fecha_caducidad'] ?? 'N/A')),
-                DataCell(
-  Row(
-    children: [
-      // Usamos Expanded para que el texto no empuje al botón fuera de la celda
-      Expanded(
-        child: Text(
-          produccion['observaciones']?.toString() ?? '', 
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      IconButton(
-        icon: const Icon(Icons.edit, size: 18),
-        onPressed: () async {
-          // Aseguramos que el valor inicial sea un String real, nunca null
-          final String valorInicial = produccion['observaciones']?.toString() ?? '';
-          
-          final controller = TextEditingController(text: valorInicial);
-
-          final nuevo = await showDialog<String>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Actualizar observaciones'),
-              content: TextField(
-                controller: controller,
-                autofocus: true, // Mejorar experiencia de usuario
-                decoration: const InputDecoration(
-                  hintText: 'Escribe una observación...',
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    // Simplemente devolvemos el texto del controlador
-                    Navigator.pop(context, controller.text);
-                  },
-                  child: const Text('Guardar'),
+                  child: Text(
+                    '$totalStock',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: totalStock > 0 ? const Color(0xFF2E7D32) : const Color(0xFFC62828)),
+                  ),
                 )
               ],
             ),
-          );
-
-          // Solo actualizamos si el usuario presionó 'Guardar' (nuevo != null)
-          // y si el texto realmente cambió respecto al original
-          if (nuevo != null && nuevo != valorInicial) {
-            _actualizarObservaciones(produccion, nuevo);
-          }
-        },
-      )
-    ],
-  ),
-),
-              ],
-            );
-          });
-        });
-      }).toList(),// Expand devuelve un Iterable, lo convertimos a List
+          ),
+        ).animate(key: ValueKey(id))
+         .fade(duration: 300.ms, delay: (40 * index).ms)
+         .slideX(begin: -0.05, duration: 300.ms, delay: (40 * index).ms);
+      },
     );
+  }
+
+  Widget _buildDetalleProducto(String id) {
+    final pList = _productosAgrupados[id]!;
+    final p = pList.first;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header del detalle
+        Container(
+          padding: const EdgeInsets.all(24),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: ClipOval(
+                  child: _iconUrl(p) != null 
+                      ? Image.network(_iconUrl(p)!, width: 60, height: 60, fit: BoxFit.cover)
+                      : Container(width: 60, height: 60, color: Colors.grey.shade100, child: const Icon(Icons.cake, color: Colors.grey)),
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_nombre(p), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    const SizedBox(height: 4),
+                    Text(_categoria(p), style: const TextStyle(fontSize: 16, color: Color(0xFF8C5535))),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _recargarSegunTab,
+                tooltip: 'Actualizar datos',
+              )
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFEEEEEE)),
+        
+        // Tabla de Variantes
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: _buildTablaPremium(pList),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ).animate(key: ValueKey(id)).fade(duration: 400.ms).slideY(begin: 0.05);
+  }
+
+  Widget _buildTablaPremium(List<Map<String, dynamic>> productos) {
+    final List<DataRow> rows = [];
+    
+    for (var producto in productos) {
+      final listaVariantes = producto['producto_variantes'] as List<dynamic>? ?? [];
+      for (var variante in listaVariantes) {
+        final listaProduccion = variante['produccion'] as List<dynamic>? ?? [];
+        for (var produccion in listaProduccion) {
+          final int rest = (produccion['cantidad_restante'] as num?)?.toInt() ?? 0;
+          
+          rows.add(DataRow(
+            cells: [
+              DataCell(Text(variante['tamaño'] ?? 'Variante', style: const TextStyle(fontWeight: FontWeight.w600))),
+              DataCell(Text('${produccion['cantidad_original'] ?? 0} pzas')),
+              DataCell(
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: rest > 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '$rest pzas', 
+                    style: TextStyle(fontWeight: FontWeight.bold, color: rest > 0 ? const Color(0xFF2E7D32) : const Color(0xFFC62828)),
+                  ),
+                )
+              ),
+              DataCell(Text(produccion['fecha_produccion'] ?? 'N/A')),
+              DataCell(Text(produccion['fecha_caducidad'] ?? 'N/A')),
+              DataCell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        produccion['observaciones']?.toString() ?? '', 
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_note, size: 20, color: Color(0xFF8C5535)),
+                      tooltip: 'Editar observación',
+                      splashRadius: 20,
+                      onPressed: () => _editarObs(produccion),
+                    )
+                  ],
+                )
+              ),
+            ]
+          ));
+        }
+      }
+    }
+
+    if (rows.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(30),
+        child: Center(child: Text("No hay registros de producción que coincidan con los filtros.", style: TextStyle(color: Colors.grey))),
+      );
+    }
+
+    return DataTable(
+      headingRowColor: MaterialStateProperty.all(const Color(0xFFF9F9F9)),
+      dataRowMaxHeight: 56,
+      columnSpacing: 20,
+      columns: const [
+        DataColumn(label: Text('Variante', style: TextStyle(fontWeight: FontWeight.bold))),
+        DataColumn(label: Text('Producido', style: TextStyle(fontWeight: FontWeight.bold))),
+        DataColumn(label: Text('Restante', style: TextStyle(fontWeight: FontWeight.bold))),
+        DataColumn(label: Text('Fecha Prod.', style: TextStyle(fontWeight: FontWeight.bold))),
+        DataColumn(label: Text('Caducidad', style: TextStyle(fontWeight: FontWeight.bold))),
+        DataColumn(label: Text('Observaciones', style: TextStyle(fontWeight: FontWeight.bold))),
+      ],
+      rows: rows,
+    );
+  }
+
+  Future<void> _editarObs(Map<String,dynamic> produccion) async {
+    final String valorInicial = produccion['observaciones']?.toString() ?? '';
+    final controller = TextEditingController(text: valorInicial);
+
+    final nuevo = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Actualizar observaciones', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Escribe una observación...',
+            filled: true,
+            fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF8C5535),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Guardar'),
+          )
+        ],
+      ),
+    );
+
+    if (nuevo != null && nuevo != valorInicial) {
+      _actualizarObservaciones(produccion, nuevo);
+    }
   }
 }
 
@@ -673,28 +883,24 @@ class _ProductoIcono extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double size = 50;
-    const Widget fallback = Icon(Icons.image_not_supported, size: 28);
+    const double size = 40;
+    const Widget fallback = Icon(Icons.image_not_supported, size: 20, color: Colors.grey);
 
     if (url != null && url!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.network(
-          url!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, size: 28)),
+          url!, width: size, height: size, fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, size: 20)),
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
-            return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+            return const Center(child: SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2)));
           },
         ),
       );
     }
     return Container(
-      width: size,
-      height: size,
+      width: size, height: size,
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(8),

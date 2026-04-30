@@ -51,6 +51,10 @@ dependencies:
   url_launcher: ^6.2.6 
   confetti: ^0.7.0
   image_picker: ^1.0.7
+  google_generative_ai: ^0.4.7
+  flutter_markdown: ^0.7.7+1
+  fl_chart: 0.68.0
+  flutter_animate: ^4.5.2
 
 
 dev_dependencies:

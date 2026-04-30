@@ -27,9 +27,31 @@ class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
   Uint8List? _pdfBytes;
   String? _pdfFilename;
 
+  List<Map<String, dynamic>> _productos = [];
+  int? _productoSeleccionadoId;
+  bool _cargandoProductos = true;
+
   @override
   void initState() {
     super.initState();
+    _cargarProductos();
+  }
+
+  Future<void> _cargarProductos() async {
+    try {
+      final res = await supabase.from('productos').select('id_producto, nombre').order('nombre');
+      if (mounted) {
+        setState(() {
+          _productos = List<Map<String, dynamic>>.from(res);
+          _cargandoProductos = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _cargandoProductos = false);
+        _snackLocal('Error al cargar productos: $e', error: true);
+      }
+    }
   }
 
   Future<void> _guardarReceta() async {
@@ -51,6 +73,15 @@ class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
         'version': _versionCtrl.text.trim(),
         'autor': _autorCtrl.text.trim()
       }).select().single();
+
+      // Vincular con el producto si se seleccionó uno
+      if (_productoSeleccionadoId != null) {
+        final idReceta = nuevaReceta['id_receta'] ?? nuevaReceta['id'];
+        await supabase.from('receta_producto').insert({
+          'id_receta': idReceta,
+          'id_producto': _productoSeleccionadoId,
+        });
+      }
 
       if (!mounted) return;
       Navigator.pop(context, nuevaReceta);
@@ -83,6 +114,25 @@ class _DialogoCrearRecetaState extends State<DialogoCrearReceta> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextFormField(controller: _nombreCtrl, validator: (v) => v == null || v.isEmpty ? 'Requerido' : null, decoration: const InputDecoration(labelText: 'Nombre de la receta', border: OutlineInputBorder())),
+              const SizedBox(height: 16),
+              if (_cargandoProductos)
+                const CircularProgressIndicator()
+              else
+                DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(labelText: 'Vincular a Producto (Opcional)', border: OutlineInputBorder()),
+                  value: _productoSeleccionadoId,
+                  items: [
+                    const DropdownMenuItem<int>(
+                      value: null,
+                      child: Text('Ninguno (Receta General)'),
+                    ),
+                    ..._productos.map((p) => DropdownMenuItem<int>(
+                          value: p['id_producto'],
+                          child: Text(p['nombre'] ?? 'Sin nombre'),
+                        )),
+                  ],
+                  onChanged: (val) => setState(() => _productoSeleccionadoId = val),
+                ),
               const SizedBox(height: 16),
               TextFormField(controller: _descripcionCtrl, decoration: const InputDecoration(labelText: 'Descripción (opcional)', border: OutlineInputBorder())),
               const SizedBox(height: 16),

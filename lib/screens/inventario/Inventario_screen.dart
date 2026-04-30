@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import 'dialogo_variante.dart';
 import 'dialogo_producto.dart';
+import 'insumos_tab.dart'; // <-- Nueva pestaña de Insumos
+import 'package:flutter_animate/flutter_animate.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -15,7 +17,154 @@ class InventarioScreen extends StatefulWidget {
   State<InventarioScreen> createState() => _InventarioScreenState();
 }
 
-class _InventarioScreenState extends State<InventarioScreen>
+class _InventarioScreenState extends State<InventarioScreen> {
+  int _selectedIndex = 0;
+
+  final List<Widget> _pantallas = const [
+    ProductosTab(),
+    InsumosTab(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const Icon(Icons.inventory_2_rounded, color: Color(0xFF8C5535)),
+            const SizedBox(width: 12),
+            const Text('Inventario General', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: Colors.grey.shade200, height: 1),
+        ),
+      ),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // =======================
+          // PANEL IZQUIERDO (Menú Lateral)
+          // =======================
+          Container(
+            width: 280,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(right: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 8, bottom: 12),
+                  child: Text(
+                    'GESTIÓN',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                _MenuItem(
+                  title: 'Productos Terminados',
+                  icon: Icons.cake_rounded,
+                  isSelected: _selectedIndex == 0,
+                  onTap: () => setState(() => _selectedIndex = 0),
+                ).animate().fade().slideX(begin: -0.1),
+                const SizedBox(height: 8),
+                _MenuItem(
+                  title: 'Materia Primas / Insumos',
+                  icon: Icons.kitchen_rounded,
+                  isSelected: _selectedIndex == 1,
+                  onTap: () => setState(() => _selectedIndex = 1),
+                ).animate().fade(delay: 100.ms).slideX(begin: -0.1),
+              ],
+            ),
+          ),
+          
+          // =======================
+          // PANEL DERECHO (Contenido)
+          // =======================
+          Expanded(
+            child: IndexedStack(
+              key: ValueKey(_selectedIndex),
+              index: _selectedIndex,
+              children: _pantallas,
+            ).animate().fade(duration: 400.ms).slideY(begin: 0.02),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuItem extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _MenuItem({
+    required this.title,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFFCF5EE) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF8C5535).withValues(alpha: 0.5) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: isSelected ? const Color(0xFF8C5535) : Colors.grey.shade600, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? const Color(0xFF8C5535) : Colors.black87,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ProductosTab extends StatefulWidget {
+  const ProductosTab({super.key});
+
+  @override
+  State<ProductosTab> createState() => _ProductosTabState();
+}
+
+class _ProductosTabState extends State<ProductosTab>
     with TickerProviderStateMixin {
 
   List<Map<String, dynamic>> _productos = [];
@@ -494,28 +643,13 @@ class _InventarioScreenState extends State<InventarioScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Inventario'),
-        actions: [
-          IconButton(
-            tooltip: 'Añadir nuevo producto',
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const AgregarProductoScreen(),
-                ),
-              ).then((_) => _cargarProductos());
-            },
-          )
-        ],
-      ),
+      backgroundColor: Colors.white,
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: _productosAgrupados.entries.map((entry) {
           final idProducto = entry.key;
           final variantes = entry.value;
+          final int index = _productosAgrupados.keys.toList().indexOf(idProducto);
 
           return Card(
             margin: const EdgeInsets.symmetric(vertical: 8),
@@ -661,7 +795,7 @@ class _InventarioScreenState extends State<InventarioScreen>
                                         bool eliminando = false; // Estado local para el círculo de carga
 
                                         return StatefulBuilder(
-                                          builder: (context, setStateInside) {
+                                          builder: (contextInside, setStateInside) {
                                             return AlertDialog(
                                               title: Text(eliminando ? 'Procesando...' : '¿Eliminar variante?'),
                                               content: Column(
@@ -676,55 +810,45 @@ class _InventarioScreenState extends State<InventarioScreen>
                                                     Text('Estás a punto de eliminar una variante de "${_nombreProducto(idProducto)}". Esta acción es irreversible.'),
                                                 ],
                                               ),
-                                              actions: eliminando
-                                                  ? [] // Sin botones mientras se borra en Supabase
-                                                  : [
-                                                      TextButton(
-                                                        onPressed: () => Navigator.pop(context, null),
-                                                        child: const Text('CANCELAR'),
-                                                      ),
-                                                      FilledButton(
-                                                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                                                        onPressed: () async {
-                                                          // Cambiamos a estado de carga
-                                                          setStateInside(() => eliminando = true);
-                                                          
-                                                          // 2. Llamamos a tu función de Supabase
-                                                          final resultado = await _eliminarVariante(v);
-                                                          
-                                                          if (context.mounted) {
-                                                            // Cerramos el diálogo devolviendo true o false
-                                                            Navigator.pop(context, resultado);
-                                                          }
-                                                        },
-                                                        child: const Text('ELIMINAR'),
-                                                      ),
-                                                    ],
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(contextInside, false),
+                                                  child: const Text('CANCELAR'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: eliminando ? null : () async {
+                                                    setStateInside(() => eliminando = true);
+
+                                                    bool exito = await _eliminarVariante(v);
+
+                                                    if (contextInside.mounted) {
+                                                      Navigator.pop(contextInside, exito);
+                                                    }
+                                                  },
+                                                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                                  child: const Text('ELIMINAR DEFINITIVAMENTE'),
+                                                ),
+                                              ],
                                             );
                                           },
                                         );
                                       },
                                     );
 
-                                    // 3. Feedback visual final con SnackBar
-                                    if (eliminadoExitoso == true) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Variante eliminada con éxito'),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      }
-                                    } else if (eliminadoExitoso == false) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Error al eliminar la variante'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
+                                    if (eliminadoExitoso == true && context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Variante eliminada exitosamente'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    } else if (eliminadoExitoso == false && context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Error al eliminar la variante'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
                                     }
                                   },
                                 ),
@@ -735,16 +859,40 @@ class _InventarioScreenState extends State<InventarioScreen>
                       )
                     ],
             ),
-          );
+          ).animate(key: ValueKey(idProducto))
+           .fade(duration: 300.ms, delay: (20 * index).ms)
+           .slideX(begin: 0.02, duration: 300.ms, delay: (20 * index).ms);
         }).toList(),
       ),
-      floatingActionButton: _hayCambios
-          ? FloatingActionButton.extended(
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_hayCambios)
+            FloatingActionButton.extended(
+              heroTag: 'save_productos',
+              backgroundColor: Colors.green,
               onPressed: _guardarCambiosStock,
               icon: const Icon(Icons.save),
               label: const Text('Guardar cambios'),
-            )
-          : null,
+            ),
+          if (_hayCambios) const SizedBox(height: 10),
+          FloatingActionButton.extended(
+            heroTag: 'add_producto',
+            backgroundColor: Colors.black,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AgregarProductoScreen(),
+                ),
+              ).then((_) => _cargarProductos());
+            },
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text('Nuevo Producto', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 

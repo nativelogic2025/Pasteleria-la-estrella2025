@@ -6,6 +6,7 @@ import '../menu_administrativo.dart';
 import '../menu_colaborador.dart';
 // 👇 opcional: para ocultar los botones en versión release
 import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter_animate/flutter_animate.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,13 +49,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (role == 'administrador') {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
-      } else {
+      } else if (role == 'colaborador') {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
+      } else {
+        await auth.logout();
+        if (mounted) {
+          setState(() {
+            _error = 'Error: Tu cuenta no tiene un rol válido asignado.';
+          });
+        }
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Error: Credenciales incorrectas o problema de conexión.';
+        if (e.toString().contains('Cuenta desactivada')) {
+          _error = 'Tu cuenta ha sido desactivada. Contacta al administrador.';
+        } else if (e.toString().contains('email_not_confirmed')) {
+          _error = 'Error: Tu correo no ha sido confirmado. Si acabas de quitar la opción "Confirm Email" en Supabase, por favor crea un usuario nuevo, ya que este usuario viejo se quedó bloqueado esperando confirmación.';
+        } else {
+          _error = 'Error: Credenciales incorrectas o problema de conexión.';
+        }
       });
       print("Error detallado: $e");
     } finally {
@@ -81,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Image.asset(
                 'assets/logo.png',
                 width: 500,
-              ),
+              ).animate().fade(duration: 600.ms).scaleXY(begin: 0.9, end: 1.0, curve: Curves.easeOut),
             ),
           ),
           Expanded(
@@ -180,92 +194,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    // 👇👇👇 BOTONES TEMPORALES DE PRUEBA 👇👇👇 ACTUALIZADOS PARA INICIAR SESION CON USUARIOS DE PRUEBA
-                    if (!kReleaseMode) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  final auth = AuthService();
-                                  await auth.loginUser('admin@laestrella.com', 'laestrella2026');
-
-                                  if (!mounted) return;
-
-                                  // ✨ PASO CLAVE: Usamos el Provider para cargar el rol
-                                  final userProvider = Provider.of<UserProvider>(context, listen: false);
-                                  await userProvider.refreshRole(); // Esta función ya obtiene el nombre del rol (admin/cliente)
-
-                                  if (!mounted) return;
-
-                                  // Ahora leemos el rol directamente desde el Provider
-                                  final role = userProvider.rol?.toLowerCase();
-
-                                  if (role == 'administrador') {
-                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
-                                  } else {
-                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
-                                  }
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  setState(() {
-                                    _error = 'Error: Credenciales incorrectas o problema de conexión.';
-                                  });
-                                  print("Error detallado: $e");
-                                } finally {
-                                  if (mounted) setState(() => _loading = false);
-                                }
-                              },
-                              icon: const Icon(Icons.admin_panel_settings),
-                              label: const Text('Entrar como Admin (debug)'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  final auth = AuthService();
-                                  await auth.loginUser('colaborador@laestrella.com', 'laestrella2026');
-
-                                  if (!mounted) return;
-
-                                  // ✨ PASO CLAVE: Usamos el Provider para cargar el rol
-                                  final userProvider = Provider.of<UserProvider>(context, listen: false);
-                                  await userProvider.refreshRole(); // Esta función ya obtiene el nombre del rol (admin/cliente)
-
-                                  if (!mounted) return;
-
-                                  // Ahora leemos el rol directamente desde el Provider
-                                  final role = userProvider.rol?.toLowerCase();
-
-                                  if (role == 'administrador') {
-                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuAdministrativo()));
-                                  } else {
-                                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MenuColaborador()));
-                                  }
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  setState(() {
-                                    _error = 'Error: Credenciales incorrectas o problema de conexión.';
-                                  });
-                                  print("Error detallado: $e");
-                                } finally {
-                                  if (mounted) setState(() => _loading = false);
-                                }
-                              },
-                              icon: const Icon(Icons.group),
-                              label:
-                                  const Text('Entrar como Colaborador (debug)'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    // ☝️☝️☝️ BOTONES TEMPORALES DE PRUEBA ☝️☝️☝️
-                  ],
+                  ].animate(interval: 50.ms).fade(duration: 400.ms).slideX(begin: 0.05),
                 ),
               ),
             ),

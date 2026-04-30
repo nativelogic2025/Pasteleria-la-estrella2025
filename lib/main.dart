@@ -7,6 +7,7 @@ import 'screens/carrito/carrito.dart';
 import 'screens/carrito/carrito_provider.dart';
 import 'product_notifier.dart'; 
 import 'screens/servicios/supabase_client.dart';
+import 'screens/pedido/ticket_publico_screen.dart';
 
 import 'screens/servicios/user_provider.dart';
 
@@ -64,6 +65,12 @@ class MyApp extends StatelessWidget {
       home: const SplashScreen(),
       routes: {
         '/carrito': (context) => const CarritoScreen(),
+        '/ticket':  (context) {
+          final folio = (ModalRoute.of(context)?.settings.arguments as String?)
+              ?? Uri.base.queryParameters['folio']
+              ?? '';
+          return TicketPublicoScreen(folio: folio);
+        },
       },
     );
   }
