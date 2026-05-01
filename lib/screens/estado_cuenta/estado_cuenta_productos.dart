@@ -55,6 +55,7 @@ class _EstadoCuentaProductosScreenState extends State<EstadoCuentaProductosScree
     _initIntl().then((_) => _cargarVentasDetalle());
   }
 
+
   Future<void> _initIntl() async {
     Intl.defaultLocale = 'es_MX';
     await initializeDateFormatting('es_MX', null);

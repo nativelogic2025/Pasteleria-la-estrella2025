@@ -57,6 +57,7 @@ class _EstadoCuentaDineroScreenState extends State<EstadoCuentaDineroScreen> {
     _initIntl().then((_) => _cargarMovimientos());
   }
 
+
   Future<void> _initIntl() async {
     Intl.defaultLocale = 'es_MX';
     await initializeDateFormatting('es_MX', null);
